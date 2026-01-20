@@ -1,18 +1,14 @@
-# requirements.txt
-cat > requirements.txt << 'EOF'
 # Core STT
 faster-whisper>=1.0.0
-
 # Áudio
 sounddevice>=0.4.6
 numpy>=1.24.0
 
 # Servidor (próximas etapas)
-websockets>=12.0
+websockets>=12.0        
 aiohttp>=3.9.0
 aiofiles>=23.0.0
 
 # CLI
 click>=8.1.0
 rich>=13.0.0
-EOF
