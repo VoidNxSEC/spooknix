@@ -19,8 +19,25 @@
         };
       };
 
+      # ── GUI package (thin client — sem torch/ML) ──────────────────────────
+      guiPkg = pkgs.python3.withPackages (ps: [
+        ps.pyqt6
+        ps.pyqt6-sip
+        ps.requests
+      ]);
+
+      spooknixGui = pkgs.writeShellApplication {
+        name = "spooknix-gui";
+        runtimeInputs = [ guiPkg ];
+        text = ''
+          export PYTHONPATH="${self}''${PYTHONPATH:+:$PYTHONPATH}"
+          exec python -m src.gui "$@"
+        '';
+      };
+
     in
     {
+      # ── Dev shell ─────────────────────────────────────────────────────────
       devShells.${system}.default = pkgs.mkShell {
         name = "stt-pipeline";
 
@@ -75,5 +92,19 @@
         # Variáveis de ambiente para CUDA
         LD_LIBRARY_PATH = "${pkgs.cudaPackages.cudatoolkit}/lib";
       };
+
+      # ── Packages ──────────────────────────────────────────────────────────
+      packages.${system} = {
+        default = spooknixGui;
+        gui     = spooknixGui;
+      };
+
+      # ── NixOS module (backend container) ─────────────────────────────────
+      nixosModules.default = import ./nix/modules/nixos/default.nix;
+      nixosModules.spooknix = import ./nix/modules/nixos/default.nix;
+
+      # ── Home-Manager module (systray GUI) ─────────────────────────────────
+      homeManagerModules.default = import ./nix/modules/home-manager/default.nix;
+      homeManagerModules.spooknix = import ./nix/modules/home-manager/default.nix;
     };
 }
