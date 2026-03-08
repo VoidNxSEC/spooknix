@@ -8,7 +8,7 @@ import click
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
-from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
+from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn, BarColumn, TimeRemainingColumn
 
 console = Console()
 
@@ -82,7 +82,22 @@ def file(audio_path, language, model, output_dir, fmt):
     )
 
     # Transcreve
-    result = transcribe_file(m, audio_path, language=language)
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[cyan]{task.description}"),
+        BarColumn(),
+        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+        TimeElapsedColumn(),
+        TimeRemainingColumn(),
+        console=console,
+    ) as progress:
+        task_id = progress.add_task("Transcrevendo...", total=100.0)
+        
+        def on_progress_cb(current, total):
+            if total > 0:
+                progress.update(task_id, completed=(current / total) * 100.0)
+                
+        result = transcribe_file(m, audio_path, language=language, on_progress=on_progress_cb)
 
     # Persiste outputs
     saved = []

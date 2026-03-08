@@ -68,11 +68,11 @@ in
       windowRules = mkOption {
         type = types.listOf types.str;
         default = [
-          "float,       class:^(spooknix)$"
-          "size 380 480, class:^(spooknix)$"
-          "center,      class:^(spooknix)$"
-          "animation slide, class:^(spooknix)$"
-          "rounding 12, class:^(spooknix)$"
+          "float on, match:class ^(spooknix)$"
+          "size 380 480, match:class ^(spooknix)$"
+          "center on, match:class ^(spooknix)$"
+          "animation slide, match:class ^(spooknix)$"
+          "rounding 12, match:class ^(spooknix)$"
         ];
         description = "Regras de janela Hyprland para o Spooknix.";
       };
@@ -128,7 +128,7 @@ in
       bind = [
         "${cfg.hyprland.keybind}, exec, ${guiBin}/bin/spooknix-gui"
       ];
-      windowrulev2 = cfg.hyprland.windowRules;
+      windowrule = cfg.hyprland.windowRules;
     };
 
     # ── Waybar ─────────────────────────────────────────────────────────────

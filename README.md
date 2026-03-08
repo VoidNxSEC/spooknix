@@ -1,6 +1,6 @@
-# Spooknix — Privacy-first STT Engine
+# Spooknix — High Fidelity STT Engine
 
-Transcrição de áudio e vídeo 100% local — nenhum dado sai da máquina.
+Transcrição de áudio e vídeo com alta fidelidade, coẽrencia tecnica e privacy first.
 
 Baseado em [faster-whisper](https://github.com/SYSTRAN/faster-whisper) com suporte CUDA.
 
@@ -10,7 +10,7 @@ Baseado em [faster-whisper](https://github.com/SYSTRAN/faster-whisper) com supor
 
 - Python 3.13+
 - NVIDIA GPU com 4–6GB VRAM (ou CPU com fallback automático)
-- ffmpeg (instalado via `nix develop` ou `apt install ffmpeg`)
+- ffmpeg (instalado via `nix develop`, `apt install ffmpeg, dependendo da sua distro.`)
 
 ---
 
@@ -46,12 +46,12 @@ python -m src.cli file <audio_path> [opções]
 
 **Opções:**
 
-| Flag | Padrão | Descrição |
-|---|---|---|
-| `-l`, `--language` | `pt` | Código do idioma (`pt`, `en`, `es`, …) |
-| `-m`, `--model` | `small` | Tamanho do modelo Whisper |
-| `-o`, `--output-dir` | `outputs/` | Diretório de saída |
-| `-f`, `--format` | `all` | Formato: `txt`, `srt`, `json`, `all` |
+| Flag                 | Padrão     | Descrição                              |
+| -------------------- | ---------- | -------------------------------------- |
+| `-l`, `--language`   | `pt`       | Código do idioma (`pt`, `en`, `es`, …) |
+| `-m`, `--model`      | `small`    | Tamanho do modelo Whisper              |
+| `-o`, `--output-dir` | `outputs/` | Diretório de saída                     |
+| `-f`, `--format`     | `all`      | Formato: `txt`, `srt`, `json`, `all`   |
 
 **Exemplos:**
 
@@ -67,7 +67,8 @@ python -m src.cli file podcast.m4a --language en --format json
 ```
 
 **Saída gerada** (com `--format all`):
-```
+
+```javascript
 outputs/
 ├── transcripts/
 │   ├── sample.txt    ← texto completo
@@ -95,12 +96,12 @@ docker compose up
 
 **Variáveis de ambiente:**
 
-| Variável | Padrão | Descrição |
-|---|---|---|
-| `MODEL_SIZE` | `small` | Modelo Whisper |
-| `DEVICE` | auto | `cuda` ou `cpu` |
-| `HOST` | `0.0.0.0` | Endereço de bind |
-| `PORT` | `8000` | Porta HTTP |
+| Variável     | Padrão    | Descrição        |
+| ------------ | --------- | ---------------- |
+| `MODEL_SIZE` | `small`   | Modelo Whisper   |
+| `DEVICE`     | auto      | `cuda` ou `cpu`  |
+| `HOST`       | `0.0.0.0` | Endereço de bind |
+| `PORT`       | `8000`    | Porta HTTP       |
 
 ---
 
@@ -136,10 +137,10 @@ curl -X POST http://localhost:8000/transcribe \
 
 **Parâmetros:**
 
-| Campo | Obrigatório | Descrição |
-|---|---|---|
-| `file` | Sim | Arquivo de áudio/vídeo |
-| `language` | Não (padrão `pt`) | Código do idioma |
+| Campo      | Obrigatório       | Descrição              |
+| ---------- | ----------------- | ---------------------- |
+| `file`     | Sim               | Arquivo de áudio/vídeo |
+| `language` | Não (padrão `pt`) | Código do idioma       |
 
 **Resposta:**
 
@@ -159,18 +160,18 @@ curl -X POST http://localhost:8000/transcribe \
 
 ## Modelos disponíveis
 
-| Modelo | VRAM | Velocidade | Precisão |
-|---|---|---|---|
-| `tiny` | ~1 GB | Muito rápido | Básica |
-| `base` | ~1 GB | Rápido | Boa |
-| `small` | ~2 GB | Balanceado ← **padrão** | Ótima |
-| `medium` | ~5 GB | Lento | Máxima |
+| Modelo   | VRAM   | Velocidade              | Precisão |
+| -------- | ------ | ----------------------- | -------- |
+| `tiny`   | \~1 GB | Muito rápido            | Básica   |
+| `base`   | \~1 GB | Rápido                  | Boa      |
+| `small`  | \~2 GB | Balanceado ← **padrão** | Ótima    |
+| `medium` | \~5 GB | Lento                   | Máxima   |
 
 ---
 
 ## Arquitetura
 
-```
+```javascript
 src/
 ├── transcriber.py   ← Motor STT (faster-whisper, VAD, SRT)
 ├── cli.py           ← Interface de linha de comando (Click + Rich)
@@ -186,9 +187,9 @@ outputs/
 
 ## Roadmap
 
-| Sprint | Status | Entregáveis |
-|---|---|---|
-| Sprint 1 | ✅ Completo | `cli.py`, `server.py`, `README.md` |
-| Sprint 2 | Pendente | Word-level timestamps, confidence scores, Rich progress bar |
-| Sprint 3 | Pendente | Streaming de microfone em tempo real |
-| Sprint 4 | Pendente | Diarização de speakers, MCP integration |
+| Sprint   | Status     | Entregáveis                                                 |
+| -------- | ---------- | ----------------------------------------------------------- |
+| Sprint 1 | ✅ Completo | `cli.py`, `server.py`, `README.md`                          |
+| Sprint 2 | ✅ Completo | Word-level timestamps, confidence scores, Rich progress bar |
+| Sprint 3 | Pendente   | Streaming de microfone em tempo real                        |
+| Sprint 4 | Pendente   | Diarização de speakers, MCP integration                     |

@@ -34,7 +34,7 @@ def get_model(size: str = "small", device: str = "cuda"):
     return model
 
 
-def transcribe_file(model, audio_path: str, language: str = "pt"):
+def transcribe_file(model, audio_path: str, language: str = "pt", on_progress=None):
     """
     Transcreve um arquivo de áudio.
     
@@ -52,23 +52,41 @@ def transcribe_file(model, audio_path: str, language: str = "pt"):
         vad_filter=True,  # Remove silêncios
         vad_parameters=dict(
             min_silence_duration_ms=500,
-        )
+        ),
+        word_timestamps=True
     )
     
+    if on_progress:
+        on_progress(0.0, info.duration)
+        
     # Processar segmentos
     results = []
     full_text = []
     
     for segment in segments:
+        words = []
+        if getattr(segment, "words", None):
+            for w in segment.words:
+                words.append({
+                    "start": w.start,
+                    "end": w.end,
+                    "word": w.word,
+                    "probability": w.probability
+                })
+                
         results.append({
             "start": segment.start,
             "end": segment.end,
-            "text": segment.text.strip()
+            "text": segment.text.strip(),
+            "words": words
         })
         full_text.append(segment.text.strip())
         
-        # Print em tempo real
-        print(f"  [{segment.start:.1f}s → {segment.end:.1f}s] {segment.text.strip()}")
+        if on_progress:
+            on_progress(segment.end, info.duration)
+        else:
+            # Print em tempo real
+            print(f"  [{segment.start:.1f}s → {segment.end:.1f}s] {segment.text.strip()}")
     
     elapsed = time.time() - start
     print(f"\n✅ Transcrição completa em {elapsed:.1f}s")

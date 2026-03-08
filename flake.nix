@@ -44,8 +44,7 @@
         packages = with pkgs; [
           # Python
           python313
-          python313Packages.pip
-          python313Packages.virtualenv
+          poetry
 
           # CUDA
           cudaPackages.cudatoolkit
@@ -73,19 +72,23 @@
           fi
           echo ""
 
-          # Criar venv se não existir
+          # Configurar Poetry
+          poetry config virtualenvs.in-project true
+
+          # Criar venv se não existir via poetry
           if [ ! -d ".venv" ]; then
-            echo "📦 Criando ambiente virtual Python..."
-            python -m venv .venv
+            echo "📦 Criando ambiente virtual Python via Poetry..."
+            poetry env use $(which python) > /dev/null
           fi
 
           source .venv/bin/activate
 
           echo "🐍 Python: $(python --version)"
-          echo "📁 Projeto: $(pwd)"
+          echo "� Poetry: $(poetry --version)"
+          echo "�� Projeto: $(pwd)"
           echo ""
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "Próximo passo: pip install -r requirements.txt"
+          echo "Próximo passo: poetry install"
           echo ""
         '';
 
@@ -96,7 +99,7 @@
       # ── Packages ──────────────────────────────────────────────────────────
       packages.${system} = {
         default = spooknixGui;
-        gui     = spooknixGui;
+        gui = spooknixGui;
       };
 
       # ── NixOS module (backend container) ─────────────────────────────────
