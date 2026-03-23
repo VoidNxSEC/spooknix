@@ -57,6 +57,7 @@
 
           # Utils
           just
+
         ];
 
         shellHook = ''
@@ -85,9 +86,17 @@
           echo ""
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo "  poetry run spooknix --help"
+          echo "  poetry run spooknix --help"
           echo "  poetry run spooknix record --clip"
           echo "  poetry run spooknix-gui"
           echo ""
+          echo "  pytest          → poetry run pytest tests/ -v"
+          echo "  pytest-cov      → poetry run pytest tests/ --cov=src"
+          echo ""
+
+          # Aliases de conveniência — delegam para o venv do poetry
+          alias pytest="poetry run pytest"
+          alias pytest-cov="poetry run pytest --cov=src --cov-report=term-missing"
         '';
 
         # Variáveis de ambiente para CUDA, áudio e libs C++ (numpy/torch via pip)
