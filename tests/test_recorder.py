@@ -209,6 +209,56 @@ def test_record_until_silence_levanta_portaudio_error():
             record_until_silence()
 
 
+def test_stop_check_fn_para_gravacao():
+    """`stop_check_fn` retornando True encerra a gravação."""
+    from src.recorder import record_until_silence, RecordingError
+
+    mock_sd, _ = _make_mock_sd(speech_chunks=50, silence_chunks=0)
+
+    called: list[bytes] = []
+
+    def stop_after_first(wav_bytes: bytes) -> bool:
+        called.append(wav_bytes)
+        return True  # para imediatamente
+
+    with patch("src.recorder.sd", mock_sd):
+        path = record_until_silence(
+            silence_duration=30.0,   # silêncio nunca alcançado
+            stop_check_fn=stop_after_first,
+            stop_check_interval=0.05,  # intervalo curto para o teste ser rápido
+        )
+
+    assert len(called) >= 1
+    # WAV retornado deve ser válido
+    with wave.open(path) as wf:
+        assert wf.getnchannels() == 1
+        assert wf.getsampwidth() == 2
+    Path(path).unlink(missing_ok=True)
+
+
+def test_stop_check_fn_recebe_wav_bytes():
+    """`stop_check_fn` recebe bytes de WAV válido como argumento."""
+    from src.recorder import record_until_silence
+
+    mock_sd, _ = _make_mock_sd(speech_chunks=30, silence_chunks=0)
+    received: list[bytes] = []
+
+    def capture_and_stop(wav_bytes: bytes) -> bool:
+        received.append(wav_bytes)
+        return True
+
+    with patch("src.recorder.sd", mock_sd):
+        path = record_until_silence(
+            stop_check_fn=capture_and_stop,
+            stop_check_interval=0.05,
+        )
+
+    Path(path).unlink(missing_ok=True)
+    assert len(received) >= 1
+    # Deve ser WAV válido (começa com RIFF)
+    assert received[0][:4] == b"RIFF"
+
+
 # ── record_fixed_duration ─────────────────────────────────────────────────────
 
 

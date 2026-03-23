@@ -151,7 +151,9 @@ SERVER_URL = os.getenv("SPOOKNIX_URL", "http://localhost:8000")
               help="Duração máxima da gravação em segundos")
 @click.option("--server", default=None, show_default=True,
               help=f"URL do servidor (padrão: $SPOOKNIX_URL ou {SERVER_URL})")
-def record(language, silence, threshold, clip, max_duration, server):
+@click.option("--stop-word", "-w", default="stop", show_default=True,
+              help="Palavra-chave falada para parar a gravação (ex: 'stop', 'para')")
+def record(language, silence, threshold, clip, max_duration, server, stop_word):
     """Grava do microfone e transcreve via servidor HTTP."""
     import os
     import subprocess
@@ -177,15 +179,50 @@ def record(language, silence, threshold, clip, max_duration, server):
         console.print("[dim]  Inicie com: docker compose up -d[/dim]")
         return
 
+    # Função de stop por palavra-chave — chama o servidor com os últimos segundos
+    def _make_stop_check(word: str):
+        boundary = "spooknix-boundary-kw"
+
+        def check(wav_bytes: bytes) -> bool:
+            body = (
+                f"--{boundary}\r\n"
+                f'Content-Disposition: form-data; name="file"; filename="kw.wav"\r\n'
+                f"Content-Type: audio/wav\r\n\r\n"
+            ).encode() + wav_bytes + (
+                f"\r\n--{boundary}\r\n"
+                f'Content-Disposition: form-data; name="language"\r\n\r\n'
+                f"{language}\r\n"
+                f"--{boundary}--\r\n"
+            ).encode()
+            req = urllib.request.Request(
+                f"{base_url}/transcribe",
+                data=body,
+                headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+                method="POST",
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=5) as resp:
+                    import json as _json
+                    text = _json.loads(resp.read()).get("text", "").lower()
+                    return word.lower() in text
+            except Exception:
+                return False
+
+        return check
+
     # Gravar
     tmp_path: str | None = None
     try:
-        with console.status("[red bold]● Gravando… (Ctrl+C para parar)[/red bold]"):
+        with console.status(
+            f"[red bold]● Gravando… (Ctrl+C ou diga '{stop_word}' para parar)[/red bold]"
+        ):
             try:
                 tmp_path = record_until_silence(
                     silence_duration=silence,
                     silence_threshold=threshold,
                     max_duration=max_duration,
+                    stop_check_fn=_make_stop_check(stop_word),
+                    stop_check_interval=2.0,
                 )
             except KeyboardInterrupt:
                 console.print("\n[yellow]Gravação interrompida.[/yellow]")
