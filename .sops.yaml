@@ -1,0 +1,8 @@
+keys:
+  - &spooknix_dev age1mrfkm88ehd8fz0fe3c9ta654sj5qydy5s4zxfu99dufvf3klf3tslmvp27
+
+creation_rules:
+  - path_regex: secrets/.*\.yaml$
+    key_groups:
+      - age:
+          - *spooknix_dev

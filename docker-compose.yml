@@ -29,7 +29,7 @@ services:
       - DEVICE=cuda
       - COMPUTE_TYPE=int8_float16
       - ENABLE_DIARIZATION=false
-      - HF_TOKEN=
+      - HF_TOKEN=${HF_TOKEN:-}   # exportado pelo shellHook via SOPS
       - HF_HOME=/root/.cache/huggingface
 
     restart: unless-stopped

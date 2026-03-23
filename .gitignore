@@ -29,8 +29,10 @@ ssh_sessions.db
 # Secrets
 .env
 .env.*
-*.key
 *.pem
+# SOPS: chave privada age — NUNCA commitar
+secrets/age.key
+# secrets/secrets.yaml é ENCRIPTADO e deve ser commitado
 
 # Editor
 *.swp

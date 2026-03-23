@@ -4,10 +4,12 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    sops-nix.url = "github:Mic92/sops-nix";
+    sops-nix.inputs.nixpkgs.follows = "nixpkgs";
   };
 
   outputs =
-    { self, nixpkgs }:
+    { self, nixpkgs, sops-nix }:
     let
       system = "x86_64-linux";
 
@@ -58,6 +60,10 @@
           # Utils
           just
 
+          # Secrets
+          sops
+          age
+
         ];
 
         shellHook = ''
@@ -93,6 +99,22 @@
           echo ""
           echo "  pytest          → testes sem GPU/mic"
           echo "  pytest-cov      → com cobertura"
+          echo ""
+
+          # ── Secrets (SOPS + age) ───────────────────────────────────────────
+          export SOPS_AGE_KEY_FILE="$PWD/secrets/age.key"
+          if [ -f "$SOPS_AGE_KEY_FILE" ] && [ -f "$PWD/secrets/secrets.yaml" ]; then
+            export HF_TOKEN
+            HF_TOKEN=$(sops -d --extract '["hf_token"]' "$PWD/secrets/secrets.yaml" 2>/dev/null || echo "")
+            if [ -n "$HF_TOKEN" ]; then
+              echo "🔑 Secrets: HF_TOKEN ✓ (via SOPS)"
+            else
+              echo "⚠️  Secrets: HF_TOKEN vazio (verifique secrets/age.key)"
+            fi
+          else
+            echo "⚠️  Secrets: secrets/age.key não encontrado"
+            echo "   Gere com: age-keygen -o secrets/age.key"
+          fi
           echo ""
 
           # Aliases de conveniência — delegam para o venv do poetry
