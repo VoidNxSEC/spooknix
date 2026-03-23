@@ -13,9 +13,6 @@ build/
 venv/
 env/
 
-# Poetry
-poetry.lock
-
 # Pytest / Coverage
 .pytest_cache/
 .coverage

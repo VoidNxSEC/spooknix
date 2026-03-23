@@ -90,8 +90,8 @@
           echo ""
         '';
 
-        # Variáveis de ambiente para CUDA e áudio
-        LD_LIBRARY_PATH = "${pkgs.cudaPackages.cudatoolkit}/lib:${pkgs.portaudio}/lib";
+        # Variáveis de ambiente para CUDA, áudio e libs C++ (numpy/torch via pip)
+        LD_LIBRARY_PATH = "${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.cudaPackages.cudatoolkit}/lib:${pkgs.portaudio}/lib";
 
         # Poetry não usa venv no path do projeto por padrão no NixOS
         POETRY_VIRTUALENVS_IN_PROJECT = "false";

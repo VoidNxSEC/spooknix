@@ -29,6 +29,10 @@ optional = true
 pyqt6 = ">=6.6.0"
 requests = ">=2.31.0"
 
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^9.0.2"
+
 [tool.poetry.scripts]
 spooknix     = "src.cli:cli"
 spooknix-gui = "src.gui:main"
