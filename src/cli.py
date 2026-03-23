@@ -134,5 +134,117 @@ def file(audio_path, language, model, output_dir, fmt):
     )
 
 
+@cli.command()
+@click.option("--language", "-l", default="pt", show_default=True,
+              help="Código do idioma (pt, en, es, …)")
+@click.option("--model", "-m",
+              type=click.Choice(["tiny", "base", "small", "medium"]),
+              default="small", show_default=True,
+              help="Tamanho do modelo Whisper")
+@click.option("--silence", "-s", default=2.0, type=float, show_default=True,
+              help="Segundos de silêncio para parar a gravação")
+@click.option("--threshold", "-t", default=0.01, type=float, show_default=True,
+              help="Limiar de RMS para detecção de silêncio")
+@click.option("--clip/--no-clip", default=False,
+              help="Copiar resultado para clipboard via wl-copy (Wayland)")
+@click.option("--max-duration", default=120.0, type=float, show_default=True,
+              help="Duração máxima da gravação em segundos")
+def record(language, model, silence, threshold, clip, max_duration):
+    """Grava do microfone e transcreve (para ao detectar silêncio)."""
+    import os
+    import subprocess
+    import torch
+    from .transcriber import get_model, transcribe_file
+    from .recorder import record_until_silence, RecordingError
+
+    # Carregar modelo
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[cyan]{task.description}"),
+        TimeElapsedColumn(),
+        console=console,
+        transient=True,
+    ) as progress:
+        progress.add_task(f"Carregando modelo '{model}'…", total=None)
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        m = get_model(model, device)
+
+    console.print(
+        f"[bold cyan]►[/bold cyan] Modelo [bold]{model}[/bold] "
+        f"no dispositivo [bold]{device}[/bold]\n"
+    )
+
+    # Gravar
+    tmp_path: str | None = None
+    try:
+        with console.status("[red bold]● Gravando… (Ctrl+C para parar)[/red bold]"):
+            try:
+                tmp_path = record_until_silence(
+                    silence_duration=silence,
+                    silence_threshold=threshold,
+                    max_duration=max_duration,
+                )
+            except KeyboardInterrupt:
+                # Parar gravação e transcrever o que foi capturado
+                console.print("\n[yellow]Gravação interrompida — transcrevendo…[/yellow]")
+                if tmp_path is None:
+                    console.print("[red]Nenhum áudio capturado.[/red]")
+                    return
+            except RecordingError as exc:
+                console.print(f"[red]Erro de gravação: {exc}[/red]")
+                return
+
+        if tmp_path is None:
+            console.print("[red]Nenhum áudio capturado.[/red]")
+            return
+
+        console.print("[green]✓ Gravação concluída.[/green]")
+
+        # Transcrever
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[cyan]{task.description}"),
+            BarColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TimeElapsedColumn(),
+            TimeRemainingColumn(),
+            console=console,
+        ) as progress:
+            task_id = progress.add_task("Transcrevendo...", total=100.0)
+
+            def on_progress_cb(current, total):
+                if total > 0:
+                    progress.update(task_id, completed=(current / total) * 100.0)
+
+            result = transcribe_file(m, tmp_path, language=language, on_progress=on_progress_cb)
+
+        text = result["text"].strip()
+
+        console.print(
+            Panel(
+                text or "(sem texto detectado)",
+                title="✅ Transcrição",
+                border_style="green",
+            )
+        )
+
+        # Clipboard
+        if clip and text:
+            try:
+                subprocess.run(["wl-copy", text], check=True, timeout=5)
+                console.print("[dim]📋 Copiado para o clipboard.[/dim]")
+            except FileNotFoundError:
+                console.print("[yellow]⚠ wl-copy não encontrado — clipboard ignorado.[/yellow]")
+            except subprocess.CalledProcessError as exc:
+                console.print(f"[yellow]⚠ Erro ao copiar: {exc}[/yellow]")
+
+    finally:
+        if tmp_path is not None:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
+
 if __name__ == "__main__":
     cli()

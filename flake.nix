@@ -28,7 +28,7 @@
 
       spooknixGui = pkgs.writeShellApplication {
         name = "spooknix-gui";
-        runtimeInputs = [ guiPkg ];
+        runtimeInputs = [ guiPkg pkgs.portaudio pkgs.wl-clipboard ];
         text = ''
           export PYTHONPATH="${self}''${PYTHONPATH:+:$PYTHONPATH}"
           exec python -m src.gui "$@"
@@ -42,7 +42,7 @@
         name = "stt-pipeline";
 
         packages = with pkgs; [
-          # Python
+          # Python + gerenciador de pacotes
           python313
           poetry
 
@@ -52,6 +52,8 @@
 
           # Áudio
           ffmpeg
+          portaudio    # backend C do sounddevice
+          wl-clipboard # wl-copy para clipboard Wayland
 
           # Utils
           just
@@ -72,28 +74,27 @@
           fi
           echo ""
 
-          # Configurar Poetry
-          poetry config virtualenvs.in-project true
-
-          # Criar venv se não existir via poetry
-          if [ ! -d ".venv" ]; then
-            echo "📦 Criando ambiente virtual Python via Poetry..."
-            poetry env use $(which python) > /dev/null
+          # Instalar dependências se necessário
+          if [ ! -f "poetry.lock" ]; then
+            echo "📦 Instalando dependências com Poetry..."
+            poetry install --with gui
           fi
 
-          source .venv/bin/activate
-
-          echo "🐍 Python: $(python --version)"
-          echo "� Poetry: $(poetry --version)"
-          echo "�� Projeto: $(pwd)"
+          echo "🐍 Python: $(poetry run python --version)"
+          echo "📁 Projeto: $(pwd)"
           echo ""
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "Próximo passo: poetry install"
+          echo "  poetry run spooknix --help"
+          echo "  poetry run spooknix record --clip"
+          echo "  poetry run spooknix-gui"
           echo ""
         '';
 
-        # Variáveis de ambiente para CUDA
-        LD_LIBRARY_PATH = "${pkgs.cudaPackages.cudatoolkit}/lib";
+        # Variáveis de ambiente para CUDA e áudio
+        LD_LIBRARY_PATH = "${pkgs.cudaPackages.cudatoolkit}/lib:${pkgs.portaudio}/lib";
+
+        # Poetry não usa venv no path do projeto por padrão no NixOS
+        POETRY_VIRTUALENVS_IN_PROJECT = "false";
       };
 
       # ── Packages ──────────────────────────────────────────────────────────

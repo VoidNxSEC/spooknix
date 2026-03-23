@@ -15,8 +15,10 @@ from PyQt6.QtCore import (
     QByteArray,
     QPropertyAnimation,
     Qt,
+    QThread,
     QTimer,
     QUrl,
+    pyqtSignal,
     pyqtSlot,
 )
 from PyQt6.QtGui import QColor, QIcon, QPainter, QPixmap
@@ -63,6 +65,23 @@ def _svg_to_icon(svg_bytes: bytes, size: int = 64) -> QIcon:
     return QIcon(px)
 
 
+# ── Thread de gravação ────────────────────────────────────────────────────────
+
+class RecordThread(QThread):
+    """Grava do microfone em background; nunca toca em widgets Qt diretamente."""
+
+    recording_finished = pyqtSignal(str)   # emite caminho do WAV temporário
+    recording_failed = pyqtSignal(str)     # emite mensagem de erro
+
+    def run(self) -> None:
+        try:
+            from .recorder import record_until_silence
+            wav_path = record_until_silence()
+            self.recording_finished.emit(wav_path)
+        except Exception as exc:  # noqa: BLE001
+            self.recording_failed.emit(str(exc))
+
+
 # ── Janela principal ──────────────────────────────────────────────────────────
 
 class SpooknixWindow(QMainWindow):
@@ -74,6 +93,13 @@ class SpooknixWindow(QMainWindow):
         self._nam = QNetworkAccessManager(self)
         self._active_reply: QNetworkReply | None = None
         self._pending_file: Path | None = None
+        self._record_thread: RecordThread | None = None
+        self._pending_recording_path: str | None = None
+
+        self._record_blink_timer = QTimer(self)
+        self._record_blink_timer.setInterval(500)
+        self._record_blink_timer.timeout.connect(self._blink_record_button)
+        self._record_blink_state = False
 
         self.setWindowTitle("Spooknix")
         self.setFixedSize(380, 480)
@@ -165,6 +191,23 @@ class SpooknixWindow(QMainWindow):
         self._btn_transcribe.setEnabled(False)
         self._btn_transcribe.clicked.connect(self._do_transcribe)
         layout.addWidget(self._btn_transcribe)
+
+        # Botão gravar
+        self._btn_record = QPushButton("🎙 Gravar")
+        self._btn_record.setStyleSheet("""
+            QPushButton {
+                background: rgba(166, 227, 161, 0.2);
+                color: #a6e3a1;
+                border: 1px solid rgba(166, 227, 161, 0.4);
+                border-radius: 6px;
+                padding: 6px 14px;
+                font-size: 13px;
+            }
+            QPushButton:hover { background: rgba(166, 227, 161, 0.35); }
+            QPushButton:disabled { color: #585b70; border-color: #313244; }
+        """)
+        self._btn_record.clicked.connect(self._do_record)
+        layout.addWidget(self._btn_record)
 
         # Barra de progresso (oculta por padrão)
         self._progress = QProgressBar()
@@ -302,7 +345,13 @@ class SpooknixWindow(QMainWindow):
     def _on_transcribe_done(self, reply: QNetworkReply) -> None:
         self._progress.hide()
         self._btn_transcribe.setEnabled(True)
+        self._btn_record.setEnabled(True)
         self._active_reply = None
+
+        # Limpar WAV temporário da gravação, se houver
+        if self._pending_recording_path:
+            Path(self._pending_recording_path).unlink(missing_ok=True)
+            self._pending_recording_path = None
 
         if reply.error() != QNetworkReply.NetworkError.NoError:
             self._result_text.setPlainText(f"Erro: {reply.errorString()}")
@@ -318,6 +367,86 @@ class SpooknixWindow(QMainWindow):
         except Exception as exc:
             self._result_text.setPlainText(f"Erro ao parsear resposta: {exc}")
         reply.deleteLater()
+
+    # ── Gravação ──────────────────────────────────────────────────────────────
+
+    @pyqtSlot()
+    def _do_record(self) -> None:
+        self._btn_transcribe.setEnabled(False)
+        self._btn_record.setEnabled(False)
+        self._record_blink_state = False
+        self._record_blink_timer.start()
+
+        self._record_thread = RecordThread(self)
+        self._record_thread.recording_finished.connect(self._on_recording_done)
+        self._record_thread.recording_failed.connect(self._on_recording_error)
+        self._record_thread.start()
+
+    @pyqtSlot()
+    def _blink_record_button(self) -> None:
+        self._record_blink_state = not self._record_blink_state
+        if self._record_blink_state:
+            self._btn_record.setStyleSheet("""
+                QPushButton {
+                    background: rgba(243, 139, 168, 0.6);
+                    color: #ffffff;
+                    border: 1px solid rgba(243, 139, 168, 0.8);
+                    border-radius: 6px;
+                    padding: 6px 14px;
+                    font-size: 13px;
+                }
+            """)
+        else:
+            self._btn_record.setStyleSheet("""
+                QPushButton {
+                    background: rgba(243, 139, 168, 0.25);
+                    color: #f38ba8;
+                    border: 1px solid rgba(243, 139, 168, 0.4);
+                    border-radius: 6px;
+                    padding: 6px 14px;
+                    font-size: 13px;
+                }
+            """)
+
+    @pyqtSlot(str)
+    def _on_recording_done(self, wav_path: str) -> None:
+        self._record_blink_timer.stop()
+        self._btn_record.setText("🎙 Gravar")
+        self._btn_record.setStyleSheet("""
+            QPushButton {
+                background: rgba(166, 227, 161, 0.2);
+                color: #a6e3a1;
+                border: 1px solid rgba(166, 227, 161, 0.4);
+                border-radius: 6px;
+                padding: 6px 14px;
+                font-size: 13px;
+            }
+            QPushButton:hover { background: rgba(166, 227, 161, 0.35); }
+            QPushButton:disabled { color: #585b70; border-color: #313244; }
+        """)
+        self._pending_recording_path = wav_path
+        self._pending_file = Path(wav_path)
+        self._do_transcribe()
+
+    @pyqtSlot(str)
+    def _on_recording_error(self, msg: str) -> None:
+        self._record_blink_timer.stop()
+        self._btn_record.setText("🎙 Gravar")
+        self._btn_record.setStyleSheet("""
+            QPushButton {
+                background: rgba(166, 227, 161, 0.2);
+                color: #a6e3a1;
+                border: 1px solid rgba(166, 227, 161, 0.4);
+                border-radius: 6px;
+                padding: 6px 14px;
+                font-size: 13px;
+            }
+            QPushButton:hover { background: rgba(166, 227, 161, 0.35); }
+            QPushButton:disabled { color: #585b70; border-color: #313244; }
+        """)
+        self._result_text.setPlainText(f"Erro de gravação: {msg}")
+        self._btn_transcribe.setEnabled(self._pending_file is not None)
+        self._btn_record.setEnabled(True)
 
     # ── Atualização de status ─────────────────────────────────────────────────
 

@@ -25,10 +25,20 @@ let
   # Script wrapper que aponta PYTHONPATH para o source
   guiBin = pkgs.writeShellApplication {
     name = "spooknix-gui";
-    runtimeInputs = [ guiPkg ];
+    runtimeInputs = [ guiPkg pkgs.portaudio pkgs.wl-clipboard ];
     text = ''
       export SPOOKNIX_URL="${cfg.serverUrl}"
       exec python -c "import sys; sys.path.insert(0, '${cfg.sourcePath}'); from src.gui import main; main()"
+    '';
+  };
+
+  # Wrapper para gravar do microfone e transcrever via CLI
+  recordBin = pkgs.writeShellApplication {
+    name = "spooknix-record";
+    runtimeInputs = [ pkgs.portaudio pkgs.wl-clipboard pkgs.poetry ];
+    text = ''
+      cd "${cfg.sourcePath}"
+      exec poetry run python -m src.cli record --model small --clip
     '';
   };
 in
@@ -63,6 +73,13 @@ in
         default = "SUPER, S";
         description = "Tecla de atalho para mostrar/ocultar a janela Spooknix (formato Hyprland).";
         example = "SUPER, S";
+      };
+
+      recordKeybind = mkOption {
+        type = types.str;
+        default = "SUPER, R";
+        description = "Atalho Hyprland para gravar do microfone e transcrever.";
+        example = "SUPER, R";
       };
 
       windowRules = mkOption {
@@ -127,6 +144,7 @@ in
     wayland.windowManager.hyprland.settings = mkIf cfg.hyprland.enable {
       bind = [
         "${cfg.hyprland.keybind}, exec, ${guiBin}/bin/spooknix-gui"
+        "${cfg.hyprland.recordKeybind}, exec, ${recordBin}/bin/spooknix-record"
       ];
       windowrule = cfg.hyprland.windowRules;
     };

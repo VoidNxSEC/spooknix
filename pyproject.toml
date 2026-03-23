@@ -1,16 +1,48 @@
-[project]
+[tool.poetry]
 name = "spooknix"
-version = "0.1.0"
+version = "0.3.0"
 description = "Privacy-first Speech-to-Text Engine"
-authors = [
-    {name = "VoidNxLabs",email = "voidnx@labs"}
-]
+authors = ["Pina <voidnx@labs>"]
 readme = "README.md"
-requires-python = "^3.13"
-dependencies = [
-]
+packages = [{ include = "src" }]
 
+[tool.poetry.dependencies]
+python = "^3.13"
+# STT core
+torch = ">=2.0.0"
+faster-whisper = ">=1.0.0"
+# Áudio
+sounddevice = ">=0.4.6"
+numpy = ">=1.24.0"
+# Servidor
+aiohttp = ">=3.9.0"
+aiofiles = ">=23.0.0"
+websockets = ">=12.0"
+# CLI
+click = ">=8.1.0"
+rich = ">=13.0.0"
+
+[tool.poetry.group.gui]
+optional = true
+
+[tool.poetry.group.gui.dependencies]
+pyqt6 = ">=6.6.0"
+requests = ">=2.31.0"
+
+[tool.poetry.scripts]
+spooknix     = "src.cli:cli"
+spooknix-gui = "src.gui:main"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

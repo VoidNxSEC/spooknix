@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# Ambientes virtuais
+.venv/
+venv/
+env/
+
+# Poetry
+poetry.lock
+
+# Pytest / Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+
+# Outputs gerados
+outputs/
+
+# Arquivos de sessão / DBs locais
+ssh_sessions.db
+*.db
+
+# Secrets
+.env
+.env.*
+*.key
+*.pem
+
+# Editor
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# Nix
+result
+result-*
