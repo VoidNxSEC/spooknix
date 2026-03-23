@@ -17,11 +17,16 @@ services:
 
     volumes:
       - ./outputs:/app/outputs
-      - ./src:/app/src:ro # Read-only para hot-reload
+      - ./src:/app/src:ro                          # hot-reload do código
+      - hf_cache:/root/.cache/huggingface          # modelos persistem entre restarts
 
     environment:
       - CUDA_VISIBLE_DEVICES=0
       - MODEL_SIZE=small
       - DEVICE=cuda
+      - HF_HOME=/root/.cache/huggingface
 
     restart: unless-stopped
+
+volumes:
+  hf_cache:    # cache persistente dos modelos HuggingFace

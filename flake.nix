@@ -102,6 +102,10 @@
         # Variáveis de ambiente para CUDA, áudio e libs C++ (numpy/torch via pip)
         LD_LIBRARY_PATH = "${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.cudaPackages.cudatoolkit}/lib:${pkgs.portaudio}/lib";
 
+        # Redirecionar cache do HuggingFace para home do usuário
+        HF_HOME = "$HOME/.cache/huggingface";
+        HUGGINGFACE_HUB_CACHE = "$HOME/.cache/huggingface/hub";
+
         # Poetry não usa venv no path do projeto por padrão no NixOS
         POETRY_VIRTUALENVS_IN_PROJECT = "false";
       };
