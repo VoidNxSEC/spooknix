@@ -1,50 +1,96 @@
-# Spooknix — High Fidelity STT Engine
+# Spooknix — Privacy-first STT Engine
 
-Transcrição de áudio e vídeo com alta fidelidade, coẽrencia tecnica e privacy first.
+Transcrição de áudio com alta fidelidade, privacy-first, sem nuvem.
 
-Baseado em [faster-whisper](https://github.com/SYSTRAN/faster-whisper) com suporte CUDA.
+Baseado em [faster-whisper](https://github.com/SYSTRAN/faster-whisper) com suporte CUDA via Docker.
 
 ---
 
 ## Requisitos
 
-- Python 3.13+
-- NVIDIA GPU com 4–6GB VRAM (ou CPU com fallback automático)
-- ffmpeg (instalado via `nix develop`, `apt install ffmpeg, dependendo da sua distro.`)
+- NixOS / Nix com Flakes habilitado
+- Docker + NVIDIA Container Toolkit (CDI)
+- GPU NVIDIA com 4–6 GB VRAM (CPU funciona, mais lento)
 
 ---
 
 ## Setup
 
 ```bash
-# Entrar no ambiente Nix (recomendado)
+# 1. Entrar no ambiente Nix
 nix develop
 
-# Instalar dependências Python
-pip install -r requirements.txt
+# 2. Instalar dependências Python
+poetry install --with gui
+
+# 3. Subir o servidor de inferência (GPU via Docker)
+docker compose up -d
+
+# 4. Verificar
+spooknix info
+curl http://localhost:8000/health
 ```
 
 ---
 
 ## CLI
 
-### `stt info` — Status do sistema
+Dentro do `nix develop`, os comandos ficam disponíveis diretamente:
 
 ```bash
-python -m src.cli info
+spooknix --help
+```
+
+### `spooknix info` — Status do sistema
+
+```bash
+spooknix info
 ```
 
 Exibe GPU detectada, VRAM disponível e modelos suportados.
 
 ---
 
-### `stt file` — Transcrever arquivo
+### `spooknix record` — Gravar do microfone
 
 ```bash
-python -m src.cli file <audio_path> [opções]
+spooknix record [opções]
 ```
 
-**Opções:**
+Grava até detectar silêncio e envia o áudio ao servidor Docker para transcrição.
+
+| Flag              | Padrão              | Descrição                              |
+| ----------------- | ------------------- | -------------------------------------- |
+| `-l`, `--language`| `pt`                | Código do idioma (`pt`, `en`, `es`, …) |
+| `-s`, `--silence` | `2.0`               | Segundos de silêncio para parar        |
+| `-t`, `--threshold`| `0.01`             | RMS mínimo para considerar silêncio    |
+| `--clip/--no-clip`| desativado          | Copiar resultado para clipboard        |
+| `--max-duration`  | `120.0`             | Teto máximo de gravação (segundos)     |
+| `--server`        | `$SPOOKNIX_URL`     | URL do servidor (padrão: localhost:8000)|
+
+**Exemplos:**
+
+```bash
+# Gravar em português e copiar para clipboard
+spooknix record --clip
+
+# Gravar em inglês
+spooknix record --language en --clip
+
+# Servidor remoto
+spooknix record --server http://192.168.1.10:8000 --clip
+
+# Parar após 5s de silêncio
+spooknix record --silence 5.0 --clip
+```
+
+---
+
+### `spooknix file` — Transcrever arquivo
+
+```bash
+spooknix file <audio_path> [opções]
+```
 
 | Flag                 | Padrão     | Descrição                              |
 | -------------------- | ---------- | -------------------------------------- |
@@ -56,54 +102,62 @@ python -m src.cli file <audio_path> [opções]
 **Exemplos:**
 
 ```bash
-# Transcrição completa com todos os formatos
-python -m src.cli file sample.mp4
+# Transcrição completa
+spooknix file sample.mp4
 
-# Apenas legenda SRT, modelo medium para maior precisão
-python -m src.cli file entrevista.mp3 --model medium --format srt
+# Legenda SRT, modelo medium
+spooknix file entrevista.mp3 --model medium --format srt
 
-# Inglês, saída só JSON
-python -m src.cli file podcast.m4a --language en --format json
+# Inglês, só JSON
+spooknix file podcast.m4a --language en --format json
 ```
 
 **Saída gerada** (com `--format all`):
 
-```javascript
+```
 outputs/
 ├── transcripts/
-│   ├── sample.txt    ← texto completo
-│   └── sample.json   ← segments com timestamps
+│   ├── sample.txt
+│   └── sample.json
 └── subtitles/
-    └── sample.srt    ← legenda SubRip
+    └── sample.srt
 ```
 
 ---
 
-## API HTTP
-
-### Iniciar servidor
+## GUI (Systray)
 
 ```bash
-# Local
-python -m src.server
+spooknix-gui
+```
 
-# Com variáveis de ambiente
-MODEL_SIZE=medium DEVICE=cuda python -m src.server
+Ícone na bandeja do sistema (Wayland/Hyprland). Clique para gravar, resultado vai ao clipboard.
 
-# Docker
-docker compose up
+Atalho de teclado configurado via Home-Manager: `SUPER + R`
+
+---
+
+## Servidor HTTP
+
+### Iniciar
+
+```bash
+# Docker (recomendado — GPU via CDI)
+docker compose up -d
+
+# Local (sem GPU)
+poetry run python -m src.server
 ```
 
 **Variáveis de ambiente:**
 
-| Variável     | Padrão    | Descrição        |
-| ------------ | --------- | ---------------- |
-| `MODEL_SIZE` | `small`   | Modelo Whisper   |
-| `DEVICE`     | auto      | `cuda` ou `cpu`  |
-| `HOST`       | `0.0.0.0` | Endereço de bind |
-| `PORT`       | `8000`    | Porta HTTP       |
-
----
+| Variável       | Padrão    | Descrição        |
+| -------------- | --------- | ---------------- |
+| `MODEL_SIZE`   | `small`   | Modelo Whisper   |
+| `DEVICE`       | `cuda`    | `cuda` ou `cpu`  |
+| `HOST`         | `0.0.0.0` | Endereço de bind |
+| `PORT`         | `8000`    | Porta HTTP       |
+| `SPOOKNIX_URL` | —         | URL do servidor (usada pelo CLI) |
 
 ### `GET /health`
 
@@ -116,18 +170,12 @@ curl http://localhost:8000/health
   "status": "ok",
   "model": "small",
   "device": "cuda",
-  "uptime_s": 42.1,
   "cuda": true,
-  "gpu": "NVIDIA GeForce RTX 3060",
-  "vram_gb": 6.0
+  "gpu": "NVIDIA GeForce RTX 3050 6GB"
 }
 ```
 
----
-
 ### `POST /transcribe`
-
-Upload de arquivo via `multipart/form-data`.
 
 ```bash
 curl -X POST http://localhost:8000/transcribe \
@@ -135,61 +183,95 @@ curl -X POST http://localhost:8000/transcribe \
   -F "language=pt"
 ```
 
-**Parâmetros:**
-
-| Campo      | Obrigatório       | Descrição              |
-| ---------- | ----------------- | ---------------------- |
-| `file`     | Sim               | Arquivo de áudio/vídeo |
-| `language` | Não (padrão `pt`) | Código do idioma       |
-
 **Resposta:**
 
 ```json
 {
-  "text": "Texto completo transcrito aqui...",
+  "text": "Texto completo transcrito...",
   "segments": [
-    { "start": 0.0, "end": 3.4, "text": "Primeiro segmento." },
-    { "start": 3.5, "end": 7.1, "text": "Segundo segmento." }
+    { "start": 0.0, "end": 3.4, "text": "Primeiro segmento." }
   ],
   "language": "pt",
-  "duration": 120.5
+  "duration": 7.7
 }
 ```
 
 ---
 
+## Idiomas suportados
+
+O Whisper suporta 99 idiomas. Principais:
+
+| Flag | Idioma     |
+| ---- | ---------- |
+| `pt` | Português  |
+| `en` | Inglês     |
+| `es` | Espanhol   |
+| `fr` | Francês    |
+| `de` | Alemão     |
+| `ja` | Japonês    |
+| `zh` | Chinês     |
+
+---
+
 ## Modelos disponíveis
 
-| Modelo   | VRAM   | Velocidade              | Precisão |
-| -------- | ------ | ----------------------- | -------- |
-| `tiny`   | \~1 GB | Muito rápido            | Básica   |
-| `base`   | \~1 GB | Rápido                  | Boa      |
-| `small`  | \~2 GB | Balanceado ← **padrão** | Ótima    |
-| `medium` | \~5 GB | Lento                   | Máxima   |
+| Modelo   | VRAM   | Velocidade   | Precisão |
+| -------- | ------ | ------------ | -------- |
+| `tiny`   | ~1 GB  | Muito rápido | Básica   |
+| `base`   | ~1 GB  | Rápido       | Boa      |
+| `small`  | ~2 GB  | Balanceado ← **padrão** | Ótima |
+| `medium` | ~5 GB  | Lento        | Máxima   |
 
 ---
 
 ## Arquitetura
 
-```javascript
-src/
-├── transcriber.py   ← Motor STT (faster-whisper, VAD, SRT)
-├── cli.py           ← Interface de linha de comando (Click + Rich)
-├── server.py        ← API HTTP (aiohttp, multipart upload)
-└── __init__.py
-
-outputs/
-├── transcripts/     ← .txt e .json
-└── subtitles/       ← .srt
 ```
+Cliente (CLI / GUI)
+    │  grava WAV localmente (sounddevice, 16kHz mono)
+    │  POST multipart/form-data
+    ▼
+Servidor Docker (GPU)
+    │  faster-whisper + CTranslate2 + CUDA
+    ▼
+Resposta JSON  →  texto + segments + duration
+```
+
+```
+src/
+├── recorder.py      ← Gravação mic (sounddevice, VAD por RMS)
+├── transcriber.py   ← Motor STT (faster-whisper, VAD, SRT)
+├── cli.py           ← CLI (Click + Rich): info, file, record
+├── server.py        ← API HTTP (aiohttp): /health, /transcribe
+└── gui.py           ← Systray PyQt6 + RecordThread
+
+nix/
+├── modules/nixos/        ← services.spooknix (Docker + NVIDIA)
+└── modules/home-manager/ ← programs.spooknix (systemd, Hyprland, Waybar)
+```
+
+---
+
+## Testes
+
+```bash
+# Suite completa (sem GPU, sem microfone)
+pytest
+
+# Com cobertura
+pytest-cov
+```
+
+19 testes cobrindo recorder e CLI, todos mockados.
 
 ---
 
 ## Roadmap
 
-| Sprint   | Status     | Entregáveis                                                 |
-| -------- | ---------- | ----------------------------------------------------------- |
-| Sprint 1 | ✅ Completo | `cli.py`, `server.py`, `README.md`                          |
-| Sprint 2 | ✅ Completo | Word-level timestamps, confidence scores, Rich progress bar |
-| Sprint 3 | Pendente   | Streaming de microfone em tempo real                        |
-| Sprint 4 | Pendente   | Diarização de speakers, MCP integration                     |
+| Sprint   | Status      | Entregáveis                                              |
+| -------- | ----------- | -------------------------------------------------------- |
+| Sprint 1 | ✅ Completo | `cli.py`, `server.py`, API HTTP                          |
+| Sprint 2 | ✅ Completo | Progress bar Rich, VAD integrado                         |
+| Sprint 3 | ✅ Completo | Gravação por microfone, GUI systray, hotkey SUPER+R      |
+| Sprint 4 | Pendente    | Diarização de speakers, MCP integration                  |
