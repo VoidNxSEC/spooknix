@@ -2,6 +2,7 @@
 """CLI do Spooknix — Privacy-first STT Engine."""
 
 import json
+import os
 from pathlib import Path
 
 import click
@@ -134,13 +135,12 @@ def file(audio_path, language, model, output_dir, fmt):
     )
 
 
+SERVER_URL = os.getenv("SPOOKNIX_URL", "http://localhost:8000")
+
+
 @cli.command()
 @click.option("--language", "-l", default="pt", show_default=True,
               help="Código do idioma (pt, en, es, …)")
-@click.option("--model", "-m",
-              type=click.Choice(["tiny", "base", "small", "medium"]),
-              default="small", show_default=True,
-              help="Tamanho do modelo Whisper")
 @click.option("--silence", "-s", default=2.0, type=float, show_default=True,
               help="Segundos de silêncio para parar a gravação")
 @click.option("--threshold", "-t", default=0.01, type=float, show_default=True,
@@ -149,30 +149,33 @@ def file(audio_path, language, model, output_dir, fmt):
               help="Copiar resultado para clipboard via wl-copy (Wayland)")
 @click.option("--max-duration", default=120.0, type=float, show_default=True,
               help="Duração máxima da gravação em segundos")
-def record(language, model, silence, threshold, clip, max_duration):
-    """Grava do microfone e transcreve (para ao detectar silêncio)."""
+@click.option("--server", default=None, show_default=True,
+              help=f"URL do servidor (padrão: $SPOOKNIX_URL ou {SERVER_URL})")
+def record(language, silence, threshold, clip, max_duration, server):
+    """Grava do microfone e transcreve via servidor HTTP."""
     import os
     import subprocess
-    import torch
-    from .transcriber import get_model, transcribe_file
+    import urllib.request
+    import urllib.error
     from .recorder import record_until_silence, RecordingError
 
-    # Carregar modelo
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[cyan]{task.description}"),
-        TimeElapsedColumn(),
-        console=console,
-        transient=True,
-    ) as progress:
-        progress.add_task(f"Carregando modelo '{model}'…", total=None)
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        m = get_model(model, device)
+    base_url = server or SERVER_URL
 
-    console.print(
-        f"[bold cyan]►[/bold cyan] Modelo [bold]{model}[/bold] "
-        f"no dispositivo [bold]{device}[/bold]\n"
-    )
+    # Verificar servidor antes de gravar
+    try:
+        with urllib.request.urlopen(f"{base_url}/health", timeout=3) as resp:
+            import json
+            info = json.loads(resp.read())
+            console.print(
+                f"[bold cyan]►[/bold cyan] Servidor [bold]{base_url}[/bold] "
+                f"| modelo [bold]{info.get('model','?')}[/bold] "
+                f"| device [bold]{info.get('device','?')}[/bold]"
+                f"{' | CUDA ✓' if info.get('cuda') else ''}\n"
+            )
+    except (urllib.error.URLError, Exception) as exc:
+        console.print(f"[red]✗ Servidor não disponível em {base_url}: {exc}[/red]")
+        console.print("[dim]  Inicie com: docker compose up -d[/dim]")
+        return
 
     # Gravar
     tmp_path: str | None = None
@@ -185,10 +188,8 @@ def record(language, model, silence, threshold, clip, max_duration):
                     max_duration=max_duration,
                 )
             except KeyboardInterrupt:
-                # Parar gravação e transcrever o que foi capturado
-                console.print("\n[yellow]Gravação interrompida — transcrevendo…[/yellow]")
+                console.print("\n[yellow]Gravação interrompida.[/yellow]")
                 if tmp_path is None:
-                    console.print("[red]Nenhum áudio capturado.[/red]")
                     return
             except RecordingError as exc:
                 console.print(f"[red]Erro de gravação: {exc}[/red]")
@@ -200,30 +201,48 @@ def record(language, model, silence, threshold, clip, max_duration):
 
         console.print("[green]✓ Gravação concluída.[/green]")
 
-        # Transcrever
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[cyan]{task.description}"),
-            BarColumn(),
-            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-            TimeElapsedColumn(),
-            TimeRemainingColumn(),
-            console=console,
-        ) as progress:
-            task_id = progress.add_task("Transcrevendo...", total=100.0)
+        # Enviar para o servidor via multipart/form-data
+        with console.status("[cyan]Transcrevendo…[/cyan]"):
+            import urllib.parse
+            import email.generator
+            import io
 
-            def on_progress_cb(current, total):
-                if total > 0:
-                    progress.update(task_id, completed=(current / total) * 100.0)
+            boundary = "spooknix-boundary-42"
+            wav_data = Path(tmp_path).read_bytes()
 
-            result = transcribe_file(m, tmp_path, language=language, on_progress=on_progress_cb)
+            body_parts = (
+                f"--{boundary}\r\n"
+                f'Content-Disposition: form-data; name="file"; filename="recording.wav"\r\n'
+                f"Content-Type: audio/wav\r\n\r\n"
+            ).encode() + wav_data + (
+                f"\r\n--{boundary}\r\n"
+                f'Content-Disposition: form-data; name="language"\r\n\r\n'
+                f"{language}\r\n"
+                f"--{boundary}--\r\n"
+            ).encode()
 
-        text = result["text"].strip()
+            req = urllib.request.Request(
+                f"{base_url}/transcribe",
+                data=body_parts,
+                headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+                method="POST",
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=60) as resp:
+                    import json
+                    result = json.loads(resp.read())
+            except urllib.error.URLError as exc:
+                console.print(f"[red]Erro na transcrição: {exc}[/red]")
+                return
+
+        text = result.get("text", "").strip()
+        lang_detected = result.get("language", language)
+        duration = result.get("duration", 0.0)
 
         console.print(
             Panel(
                 text or "(sem texto detectado)",
-                title="✅ Transcrição",
+                title=f"✅ Transcrição [{lang_detected}] — {duration:.1f}s",
                 border_style="green",
             )
         )

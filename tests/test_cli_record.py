@@ -1,14 +1,15 @@
-"""Testes de integração para o comando `stt record` (src/cli.py).
+"""Testes de integração para o comando `spooknix record` (src/cli.py).
 
-Todas as dependências pesadas (modelo, recorder, torch) são mockadas.
-Nenhum áudio real ou GPU é necessário.
+O comando grava do microfone e envia o WAV via HTTP para o servidor.
+Todas as dependências externas (recorder, urllib, subprocess) são mockadas.
+Nenhum áudio real, GPU ou servidor é necessário.
 """
 
 from __future__ import annotations
 
-import os
-import tempfile
+import json
 import wave
+from io import BytesIO
 from pathlib import Path
 from unittest.mock import MagicMock, patch, call
 
@@ -19,12 +20,26 @@ from click.testing import CliRunner
 from src.cli import cli
 
 
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+
+def _make_url_response(payload: dict, status: int = 200) -> MagicMock:
+    """Cria um mock de resposta HTTP compatível com urllib.request.urlopen."""
+    body = json.dumps(payload).encode()
+    resp = MagicMock()
+    resp.read.return_value = body
+    resp.status = status
+    resp.__enter__ = lambda s: s
+    resp.__exit__ = MagicMock(return_value=False)
+    return resp
+
+
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
 
 @pytest.fixture()
 def fake_wav(tmp_path: Path) -> str:
-    """WAV temporário válido (100 amostras de silêncio) para usar como retorno do recorder."""
+    """WAV temporário válido (100 amostras de silêncio)."""
     path = tmp_path / "test.wav"
     samples = np.zeros(100, dtype=np.int16)
     with wave.open(str(path), "wb") as wf:
@@ -36,31 +51,28 @@ def fake_wav(tmp_path: Path) -> str:
 
 
 @pytest.fixture()
-def mock_model():
-    return MagicMock(name="WhisperModel")
+def health_response():
+    return {"status": "ok", "model": "small", "device": "cuda", "cuda": True}
 
 
 @pytest.fixture()
-def transcribe_result():
-    return {
-        "text": "Olá, mundo! Isso é um teste.",
-        "language": "pt",
-        "duration": 1.5,
-        "segments": [],
-    }
+def transcribe_response():
+    return {"text": "Olá, mundo! Isso é um teste.", "language": "pt", "duration": 1.5}
 
 
 # ── Testes principais ─────────────────────────────────────────────────────────
 
 
-def test_record_basico(fake_wav, mock_model, transcribe_result):
-    """Fluxo completo: grava → transcreve → exibe resultado no terminal."""
+def test_record_basico(fake_wav, health_response, transcribe_response):
+    """Fluxo completo: health check → grava → POST → exibe resultado."""
     runner = CliRunner()
 
-    with patch("torch.cuda.is_available", return_value=False), \
-         patch("src.transcriber.get_model", return_value=mock_model), \
-         patch("src.recorder.record_until_silence", return_value=fake_wav), \
-         patch("src.transcriber.transcribe_file", return_value=transcribe_result):
+    health_resp = _make_url_response(health_response)
+    transcribe_resp = _make_url_response(transcribe_response)
+
+    with patch("src.recorder.record_until_silence", return_value=fake_wav), \
+         patch("urllib.request.urlopen", side_effect=[health_resp, transcribe_resp]), \
+         patch("os.unlink"):
 
         result = runner.invoke(cli, ["record", "--language", "pt"])
 
@@ -68,36 +80,55 @@ def test_record_basico(fake_wav, mock_model, transcribe_result):
     assert "Olá, mundo! Isso é um teste." in result.output
 
 
-def test_record_com_clip_chama_wl_copy(fake_wav, mock_model, transcribe_result):
+def test_record_servidor_fora_do_ar(fake_wav):
+    """Se o servidor não responde no health check, exibe erro e sai sem gravar."""
+    import urllib.error
+    runner = CliRunner()
+
+    with patch("urllib.request.urlopen", side_effect=urllib.error.URLError("recusado")), \
+         patch("src.recorder.record_until_silence") as mock_rec:
+
+        result = runner.invoke(cli, ["record"])
+
+    assert result.exit_code == 0, result.output
+    assert "Servidor não disponível" in result.output
+    mock_rec.assert_not_called()
+
+
+def test_record_com_clip_chama_wl_copy(fake_wav, health_response, transcribe_response):
     """--clip chama `wl-copy` com o texto transcrito."""
     runner = CliRunner()
 
-    with patch("torch.cuda.is_available", return_value=False), \
-         patch("src.transcriber.get_model", return_value=mock_model), \
-         patch("src.recorder.record_until_silence", return_value=fake_wav), \
-         patch("src.transcriber.transcribe_file", return_value=transcribe_result), \
-         patch("subprocess.run") as mock_run:
+    health_resp = _make_url_response(health_response)
+    transcribe_resp = _make_url_response(transcribe_response)
+
+    with patch("src.recorder.record_until_silence", return_value=fake_wav), \
+         patch("urllib.request.urlopen", side_effect=[health_resp, transcribe_resp]), \
+         patch("subprocess.run") as mock_run, \
+         patch("os.unlink"):
 
         result = runner.invoke(cli, ["record", "--clip"])
 
     assert result.exit_code == 0, result.output
     mock_run.assert_called_once_with(
-        ["wl-copy", transcribe_result["text"]],
+        ["wl-copy", transcribe_response["text"]],
         check=True,
         timeout=5,
     )
     assert "Copiado para o clipboard" in result.output
 
 
-def test_record_clip_sem_wl_copy(fake_wav, mock_model, transcribe_result):
+def test_record_clip_sem_wl_copy(fake_wav, health_response, transcribe_response):
     """Se wl-copy não existir, exibe aviso sem falhar."""
     runner = CliRunner()
 
-    with patch("torch.cuda.is_available", return_value=False), \
-         patch("src.transcriber.get_model", return_value=mock_model), \
-         patch("src.recorder.record_until_silence", return_value=fake_wav), \
-         patch("src.transcriber.transcribe_file", return_value=transcribe_result), \
-         patch("subprocess.run", side_effect=FileNotFoundError):
+    health_resp = _make_url_response(health_response)
+    transcribe_resp = _make_url_response(transcribe_response)
+
+    with patch("src.recorder.record_until_silence", return_value=fake_wav), \
+         patch("urllib.request.urlopen", side_effect=[health_resp, transcribe_resp]), \
+         patch("subprocess.run", side_effect=FileNotFoundError), \
+         patch("os.unlink"):
 
         result = runner.invoke(cli, ["record", "--clip"])
 
@@ -105,16 +136,18 @@ def test_record_clip_sem_wl_copy(fake_wav, mock_model, transcribe_result):
     assert "wl-copy não encontrado" in result.output
 
 
-def test_record_sem_texto_nao_chama_wl_copy(fake_wav, mock_model):
+def test_record_sem_texto_nao_chama_wl_copy(fake_wav, health_response):
     """Se a transcrição for vazia, wl-copy NÃO deve ser chamado."""
     runner = CliRunner()
-    empty_result = {"text": "", "language": "pt", "duration": 0.5, "segments": []}
+    empty_result = {"text": "", "language": "pt", "duration": 0.5}
 
-    with patch("torch.cuda.is_available", return_value=False), \
-         patch("src.transcriber.get_model", return_value=mock_model), \
-         patch("src.recorder.record_until_silence", return_value=fake_wav), \
-         patch("src.transcriber.transcribe_file", return_value=empty_result), \
-         patch("subprocess.run") as mock_run:
+    health_resp = _make_url_response(health_response)
+    transcribe_resp = _make_url_response(empty_result)
+
+    with patch("src.recorder.record_until_silence", return_value=fake_wav), \
+         patch("urllib.request.urlopen", side_effect=[health_resp, transcribe_resp]), \
+         patch("subprocess.run") as mock_run, \
+         patch("os.unlink"):
 
         result = runner.invoke(cli, ["record", "--clip"])
 
@@ -122,14 +155,14 @@ def test_record_sem_texto_nao_chama_wl_copy(fake_wav, mock_model):
     mock_run.assert_not_called()
 
 
-def test_record_recording_error_exibe_mensagem(mock_model):
+def test_record_recording_error_exibe_mensagem(health_response):
     """RecordingError exibe mensagem de erro e termina sem crash."""
     from src.recorder import RecordingError
 
     runner = CliRunner()
+    health_resp = _make_url_response(health_response)
 
-    with patch("torch.cuda.is_available", return_value=False), \
-         patch("src.transcriber.get_model", return_value=mock_model), \
+    with patch("urllib.request.urlopen", return_value=health_resp), \
          patch("src.recorder.record_until_silence",
                side_effect=RecordingError("microfone não encontrado")):
 
@@ -139,14 +172,15 @@ def test_record_recording_error_exibe_mensagem(mock_model):
     assert "microfone não encontrado" in result.output
 
 
-def test_record_apaga_arquivo_temporario(fake_wav, mock_model, transcribe_result):
+def test_record_apaga_arquivo_temporario(fake_wav, health_response, transcribe_response):
     """O arquivo WAV temporário é deletado após a transcrição."""
     runner = CliRunner()
 
-    with patch("torch.cuda.is_available", return_value=False), \
-         patch("src.transcriber.get_model", return_value=mock_model), \
-         patch("src.recorder.record_until_silence", return_value=fake_wav), \
-         patch("src.transcriber.transcribe_file", return_value=transcribe_result), \
+    health_resp = _make_url_response(health_response)
+    transcribe_resp = _make_url_response(transcribe_response)
+
+    with patch("src.recorder.record_until_silence", return_value=fake_wav), \
+         patch("urllib.request.urlopen", side_effect=[health_resp, transcribe_resp]), \
          patch("os.unlink") as mock_unlink:
 
         result = runner.invoke(cli, ["record"])
@@ -155,48 +189,48 @@ def test_record_apaga_arquivo_temporario(fake_wav, mock_model, transcribe_result
     mock_unlink.assert_called_once_with(fake_wav)
 
 
-def test_record_apaga_tmp_mesmo_em_erro(fake_wav, mock_model):
-    """O arquivo WAV temporário é deletado mesmo quando a transcrição falha."""
+def test_record_apaga_tmp_mesmo_em_erro_de_post(fake_wav, health_response):
+    """O WAV temporário é deletado mesmo quando o POST ao servidor falha."""
+    import urllib.error
     runner = CliRunner()
 
-    with patch("torch.cuda.is_available", return_value=False), \
-         patch("src.transcriber.get_model", return_value=mock_model), \
-         patch("src.recorder.record_until_silence", return_value=fake_wav), \
-         patch("src.transcriber.transcribe_file", side_effect=RuntimeError("falha")), \
+    health_resp = _make_url_response(health_response)
+
+    with patch("src.recorder.record_until_silence", return_value=fake_wav), \
+         patch("urllib.request.urlopen",
+               side_effect=[health_resp, urllib.error.URLError("timeout")]), \
          patch("os.unlink") as mock_unlink:
 
         result = runner.invoke(cli, ["record"])
 
-    # O unlink deve ter sido chamado no bloco finally
     mock_unlink.assert_called_once_with(fake_wav)
 
 
-def test_record_modelo_tiny(fake_wav, mock_model, transcribe_result):
-    """--model tiny passa o tamanho correto para get_model."""
+def test_record_language_enviada_no_form(fake_wav, health_response, transcribe_response):
+    """A opção --language é incluída no body multipart enviado ao servidor."""
     runner = CliRunner()
 
-    with patch("torch.cuda.is_available", return_value=False), \
-         patch("src.transcriber.get_model", return_value=mock_model) as mock_get, \
-         patch("src.recorder.record_until_silence", return_value=fake_wav), \
-         patch("src.transcriber.transcribe_file", return_value=transcribe_result):
+    health_resp = _make_url_response(health_response)
+    transcribe_resp = _make_url_response(transcribe_response)
 
-        result = runner.invoke(cli, ["record", "--model", "tiny"])
+    captured_request: list = []
+    call_count = 0
+
+    def fake_urlopen(req, timeout=None):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return health_resp
+        if hasattr(req, "data") and req.data is not None:
+            captured_request.append(req.data)
+        return transcribe_resp
+
+    with patch("src.recorder.record_until_silence", return_value=fake_wav), \
+         patch("urllib.request.urlopen", side_effect=fake_urlopen), \
+         patch("os.unlink"):
+
+        result = runner.invoke(cli, ["record", "--language", "en"])
 
     assert result.exit_code == 0, result.output
-    mock_get.assert_called_once_with("tiny", "cpu")
-
-
-def test_record_language_option(fake_wav, mock_model, transcribe_result):
-    """--language é passado corretamente para transcribe_file."""
-    runner = CliRunner()
-
-    with patch("torch.cuda.is_available", return_value=False), \
-         patch("src.transcriber.get_model", return_value=mock_model), \
-         patch("src.recorder.record_until_silence", return_value=fake_wav), \
-         patch("src.transcriber.transcribe_file", return_value=transcribe_result) as mock_tf:
-
-        runner.invoke(cli, ["record", "--language", "en"])
-
-    # language deve ser "en"
-    _, kwargs = mock_tf.call_args
-    assert kwargs.get("language") == "en" or mock_tf.call_args[0][2] == "en"
+    assert len(captured_request) == 1
+    assert b"en" in captured_request[0]

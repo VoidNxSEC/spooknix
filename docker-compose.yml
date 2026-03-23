@@ -9,7 +9,8 @@ services:
         reservations:
           devices:
             - driver: cdi
-              count: 1
+              device_ids:
+                - nvidia.com/gpu=0
               capabilities: [ gpu ]
 
     ports:
