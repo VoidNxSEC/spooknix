@@ -1,7 +1,9 @@
 # docker-compose.yml
 services:
   spooknix:
-    build: .
+    build:
+      context: .
+      network: host   # resolve DNS do apt-get no NixOS
     image: spooknix:latest
 
     deploy:
