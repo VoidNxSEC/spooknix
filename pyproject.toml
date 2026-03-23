@@ -29,6 +29,11 @@ optional = true
 pyqt6 = ">=6.6.0"
 requests = ">=2.31.0"
 
+[tool.poetry.group.diarization]
+optional = true
+
+[tool.poetry.group.diarization.dependencies]
+pyannote-audio = ">=3.1.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^9.0.2"

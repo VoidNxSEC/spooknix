@@ -36,7 +36,10 @@ def info():
         vram_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
         table.add_row("VRAM", f"{vram_gb:.1f} GB")
 
-    table.add_row("Modelos", "tiny (~1GB) · base (~1GB) · small (~2GB) · medium (~5GB)")
+    table.add_row(
+        "Modelos",
+        "tiny (~1GB) · base (~1GB) · small (~2GB) · medium (~5GB) · large-v3 (~3GB int8_float16) ← recomendado",
+    )
     table.add_row("Idioma padrão", "pt (Português)")
 
     console.print(table)
@@ -47,8 +50,8 @@ def info():
 @click.option("--language", "-l", default="pt", show_default=True,
               help="Código do idioma (pt, en, es, …)")
 @click.option("--model", "-m",
-              type=click.Choice(["tiny", "base", "small", "medium"]),
-              default="small", show_default=True,
+              type=click.Choice(["tiny", "base", "small", "medium", "large-v2", "large-v3"]),
+              default="large-v3", show_default=True,
               help="Tamanho do modelo Whisper")
 @click.option("--output-dir", "-o", default="outputs", show_default=True,
               type=click.Path(),
@@ -153,7 +156,9 @@ SERVER_URL = os.getenv("SPOOKNIX_URL", "http://localhost:8000")
               help=f"URL do servidor (padrão: $SPOOKNIX_URL ou {SERVER_URL})")
 @click.option("--stop-word", "-w", default="stop", show_default=True,
               help="Palavra-chave falada para parar a gravação (ex: 'stop', 'para')")
-def record(language, silence, threshold, clip, max_duration, server, stop_word):
+@click.option("--diarize/--no-diarize", default=False,
+              help="Ativar diarização de speakers via pyannote-audio (requer HF_TOKEN)")
+def record(language, silence, threshold, clip, max_duration, server, stop_word, diarize):
     """Grava do microfone e transcreve via servidor HTTP."""
     import os
     import subprocess
@@ -247,6 +252,7 @@ def record(language, silence, threshold, clip, max_duration, server, stop_word):
             boundary = "spooknix-boundary-42"
             wav_data = Path(tmp_path).read_bytes()
 
+            diarize_value = "true" if diarize else "false"
             body_parts = (
                 f"--{boundary}\r\n"
                 f'Content-Disposition: form-data; name="file"; filename="recording.wav"\r\n'
@@ -255,6 +261,9 @@ def record(language, silence, threshold, clip, max_duration, server, stop_word):
                 f"\r\n--{boundary}\r\n"
                 f'Content-Disposition: form-data; name="language"\r\n\r\n'
                 f"{language}\r\n"
+                f"--{boundary}\r\n"
+                f'Content-Disposition: form-data; name="diarize"\r\n\r\n'
+                f"{diarize_value}\r\n"
                 f"--{boundary}--\r\n"
             ).encode()
 
@@ -275,14 +284,24 @@ def record(language, silence, threshold, clip, max_duration, server, stop_word):
         text = result.get("text", "").strip()
         lang_detected = result.get("language", language)
         duration = result.get("duration", 0.0)
+        diarized = result.get("diarized", False)
+        model_used = result.get("model", "?")
 
-        console.print(
-            Panel(
-                text or "(sem texto detectado)",
-                title=f"✅ Transcrição [{lang_detected}] — {duration:.1f}s",
-                border_style="green",
-            )
-        )
+        if diarized:
+            # Exibir segmentos com speaker labels
+            speaker_lines = []
+            for seg in result.get("segments", []):
+                spk = seg.get("speaker", "?")
+                speaker_lines.append(f"[bold]{spk}[/bold]: {seg['text']}")
+            body = "\n".join(speaker_lines) or "(sem texto detectado)"
+        else:
+            body = text or "(sem texto detectado)"
+
+        title = f"✅ Transcrição [{lang_detected}] — {duration:.1f}s — modelo {model_used}"
+        if diarized:
+            title += " — diarizado"
+
+        console.print(Panel(body, title=title, border_style="green"))
 
         # Clipboard
         if clip and text:

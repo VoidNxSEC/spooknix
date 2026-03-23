@@ -23,8 +23,11 @@ services:
 
     environment:
       - CUDA_VISIBLE_DEVICES=0
-      - MODEL_SIZE=small
+      - MODEL_SIZE=large-v3
       - DEVICE=cuda
+      - COMPUTE_TYPE=int8_float16
+      - ENABLE_DIARIZATION=false
+      - HF_TOKEN=
       - HF_HOME=/root/.cache/huggingface
 
     restart: unless-stopped

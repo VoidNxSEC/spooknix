@@ -9,23 +9,36 @@ from faster_whisper import WhisperModel
 import time
 
 
-def get_model(size: str = "small", device: str = "cuda"):
+SUPPORTED_MODELS = ["tiny", "base", "small", "medium", "large-v2", "large-v3"]
+
+
+def _compute_type(size: str, device: str) -> str:
+    """Seleciona compute_type ideal para o modelo e dispositivo."""
+    if device == "cpu":
+        return "int8"
+    if size in ("large-v2", "large-v3"):
+        return "int8_float16"  # ~3GB VRAM — cabe folgado em 6GB
+    return "float16"           # tiny/base/small/medium
+
+
+def get_model(size: str = "large-v3", device: str = "cuda", compute_type: str | None = None):
     """
     Carrega modelo Whisper.
-    
-    Tamanhos disponíveis para 6GB VRAM:
-    - tiny:  ~1GB  (mais rápido, menos preciso)
-    - base:  ~1GB  (bom para real-time)
-    - small: ~2GB  (balanceado) ← Recomendado para real-time
-    - medium: ~5GB (alta qualidade) ← Recomendado para batch
+
+    Tamanhos disponíveis para 6GB VRAM (RTX 3050):
+    - tiny / base : ~1GB   (mais rápido, menos preciso)
+    - small       : ~2GB   (balanceado)
+    - medium      : ~5GB   (alta qualidade, pouca margem)
+    - large-v2/v3 : ~3GB   (int8_float16) ← Recomendado — qualidade máxima
     """
-    print(f"📥 Carregando modelo '{size}' no dispositivo '{device}'...")
+    ct = compute_type or _compute_type(size, device)
+    print(f"📥 Carregando modelo '{size}' no dispositivo '{device}' ({ct})...")
     start = time.time()
-    
+
     model = WhisperModel(
         size,
         device=device,
-        compute_type="float16" if device == "cuda" else "int8"
+        compute_type=ct,
     )
     
     elapsed = time.time() - start
@@ -49,11 +62,14 @@ def transcribe_file(model, audio_path: str, language: str = "pt", on_progress=No
         audio_path,
         language=language,
         beam_size=5,
-        vad_filter=True,  # Remove silêncios
+        best_of=5,          # 5 candidatos — escolhe o melhor (↑ precisão conversacional)
+        temperature=0.0,    # determinístico — melhor para STT
+        vad_filter=True,
         vad_parameters=dict(
             min_silence_duration_ms=500,
+            threshold=0.4,  # mais sensível que o padrão (0.5)
         ),
-        word_timestamps=True
+        word_timestamps=True,
     )
     
     if on_progress:
@@ -138,7 +154,7 @@ if __name__ == "__main__":
     
     # 2. Carregar modelo
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    model = get_model("small", device)
+    model = get_model("large-v3", device)
     print()
     
     # 3. Teste com arquivo (se fornecido)
