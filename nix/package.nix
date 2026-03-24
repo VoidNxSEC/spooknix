@@ -1,13 +1,13 @@
 # nix/package.nix — pacote do spooknix-gui (thin client PyQt6, sem ML)
 {
   lib,
-  python3,
+  python313,
   makeWrapper,
   writeShellApplication,
 }:
 
 let
-  pyEnv = python3.withPackages (ps: [
+  pyEnv = python313.withPackages (ps: [
     ps.pyqt6
     ps.pyqt6-sip
     ps.requests
@@ -22,4 +22,4 @@ let
     '';
   };
 in
-  guiScript
+guiScript

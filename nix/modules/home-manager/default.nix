@@ -8,7 +8,12 @@
 #     hyprland.enable = true;
 #     waybar.enable   = true;
 #   };
-{ config, lib, pkgs, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 
 with lib;
 
@@ -16,7 +21,7 @@ let
   cfg = config.programs.spooknix;
 
   # Pacote PyQt6 mínimo para a GUI
-  guiPkg = pkgs.python3.withPackages (ps: [
+  guiPkg = pkgs.python313.withPackages (ps: [
     ps.pyqt6
     ps.pyqt6-sip
     ps.requests
@@ -25,7 +30,11 @@ let
   # Script wrapper que aponta PYTHONPATH para o source
   guiBin = pkgs.writeShellApplication {
     name = "spooknix-gui";
-    runtimeInputs = [ guiPkg pkgs.portaudio pkgs.wl-clipboard ];
+    runtimeInputs = [
+      guiPkg
+      pkgs.portaudio
+      pkgs.wl-clipboard
+    ];
     text = ''
       export SPOOKNIX_URL="${cfg.serverUrl}"
       exec python -c "import sys; sys.path.insert(0, '${cfg.sourcePath}'); from src.gui import main; main()"
@@ -35,10 +44,14 @@ let
   # Wrapper para gravar do microfone e transcrever via CLI
   recordBin = pkgs.writeShellApplication {
     name = "spooknix-record";
-    runtimeInputs = [ pkgs.portaudio pkgs.wl-clipboard pkgs.poetry ];
+    runtimeInputs = [
+      pkgs.portaudio
+      pkgs.wl-clipboard
+      pkgs.poetry
+    ];
     text = ''
       cd "${cfg.sourcePath}"
-      exec poetry run python -m src.cli record --model small --clip
+      exec poetry run python -m src.cli record --model large-v3 --clip
     '';
   };
 in
@@ -55,7 +68,7 @@ in
 
     sourcePath = mkOption {
       type = types.str;
-      default = "/home/kernelcore/arch/spooknix";
+      default = "/home/kernelcore/master/spooknix";
       description = "Caminho para o código-fonte do Spooknix (necessário para PYTHONPATH).";
     };
 
@@ -136,7 +149,10 @@ in
       comment = "Privacy-first Speech-to-Text";
       exec = "${guiBin}/bin/spooknix-gui";
       icon = "audio-input-microphone";
-      categories = [ "Utility" "AudioVideo" ];
+      categories = [
+        "Utility"
+        "AudioVideo"
+      ];
       startupNotify = false;
     };
 

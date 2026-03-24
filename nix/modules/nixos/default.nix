@@ -8,7 +8,12 @@
 #   services.spooknix.enable = true;
 #   services.spooknix.model  = "small";   # tiny | base | small | medium | large-v3
 #   services.spooknix.device = "cuda";    # cuda | cpu
-{ config, lib, pkgs, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 
 let
   cfg = config.services.spooknix;
@@ -25,13 +30,23 @@ in
     };
 
     model = lib.mkOption {
-      type = lib.types.enum [ "tiny" "base" "small" "medium" "large-v2" "large-v3" ];
-      default = "small";
+      type = lib.types.enum [
+        "tiny"
+        "base"
+        "small"
+        "medium"
+        "large-v2"
+        "large-v3"
+      ];
+      default = "large-v3";
       description = "Tamanho do modelo Whisper.";
     };
 
     device = lib.mkOption {
-      type = lib.types.enum [ "cuda" "cpu" ];
+      type = lib.types.enum [
+        "cuda"
+        "cpu"
+      ];
       default = "cuda";
       description = "Dispositivo de inferência (cuda requer GPU NVIDIA).";
     };
@@ -44,13 +59,14 @@ in
 
     outputsDir = lib.mkOption {
       type = lib.types.str;
-      default = "/var/lib/spooknix/outputs";
+      # default = "/var/lib/spooknix/outputs";
+      default = "/home/kernelcore/master/spooknix/outputs";
       description = "Diretório host para outputs persistentes (transcrições, legendas).";
     };
 
     openFirewall = lib.mkOption {
       type = lib.types.bool;
-      default = false;
+      default = true;
       description = "Abrir porta no firewall local.";
     };
   };
@@ -68,9 +84,9 @@ in
 
       environment = {
         MODEL_SIZE = cfg.model;
-        DEVICE     = cfg.device;
-        PORT       = toString cfg.port;
-        HOST       = "0.0.0.0";
+        DEVICE = cfg.device;
+        PORT = toString cfg.port;
+        HOST = "0.0.0.0";
       };
 
       ports = [ "${toString cfg.port}:${toString cfg.port}" ];
@@ -81,20 +97,21 @@ in
 
       # NVIDIA GPU passthrough (CDI)
       extraOptions = lib.optionals (cfg.device == "cuda") [
-        "--gpus" "all"
-        "--runtime" "nvidia"
+        "--gpus"
+        "all"
+        "--runtime"
+        "nvidia"
       ];
     };
 
     # Garantir que o diretório de outputs exista
     systemd.tmpfiles.rules = [
-      "d ${cfg.outputsDir}               0755 root root -"
-      "d ${cfg.outputsDir}/transcripts   0755 root root -"
-      "d ${cfg.outputsDir}/subtitles     0755 root root -"
+      "d ${cfg.outputsDir}               0755 kernelcore kernelcore -"
+      "d ${cfg.outputsDir}/transcripts   0755 kernelcore kernelcore -"
+      "d ${cfg.outputsDir}/subtitles     0755 kernelcore kernelcore -"
     ];
 
     # Firewall opcional
-    networking.firewall.allowedTCPPorts =
-      lib.mkIf cfg.openFirewall [ cfg.port ];
+    networking.firewall.allowedTCPPorts = lib.mkIf cfg.openFirewall [ cfg.port ];
   };
 }
