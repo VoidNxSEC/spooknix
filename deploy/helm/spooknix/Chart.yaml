@@ -1,0 +1,14 @@
+apiVersion: v2
+name: spooknix
+description: Privacy-first self-hosted STT engine with GPU-accelerated streaming
+type: application
+version: 0.5.0
+appVersion: "0.5.0"
+keywords:
+  - stt
+  - whisper
+  - gpu
+  - privacy
+home: https://github.com/kernelcore/spooknix
+maintainers:
+  - name: Pina

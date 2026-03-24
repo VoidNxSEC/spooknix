@@ -321,5 +321,157 @@ def record(language, silence, threshold, clip, max_duration, server, stop_word, 
                 pass
 
 
+SERVER_WS_URL = os.getenv("SPOOKNIX_WS_URL", "ws://localhost:8000")
+
+
+@cli.command()
+@click.option("--language", "-l", default="pt", show_default=True,
+              help="Código do idioma (pt, en, es, …)")
+@click.option("--window", default=3.0, type=float, show_default=True,
+              help="Janela de flush em segundos")
+@click.option("--clip/--no-clip", default=False,
+              help="Copiar resultado final para clipboard via wl-copy (Wayland)")
+@click.option("--stop-word", "-w", default=None,
+              help="Palavra-chave no texto parcial acumulado para encerrar automaticamente")
+@click.option("--server", default=None,
+              help=f"URL base do servidor WebSocket (padrão: $SPOOKNIX_WS_URL ou {SERVER_WS_URL})")
+@click.option("--max-duration", default=300.0, type=float, show_default=True,
+              help="Duração máxima da sessão em segundos")
+def stream(language, window, clip, stop_word, server, max_duration):
+    """Stream do microfone com transcrição parcial em tempo real via WebSocket."""
+    import asyncio
+    asyncio.run(_stream_async(language, window, clip, stop_word, server, max_duration))
+
+
+async def _stream_async(
+    language: str,
+    window: float,
+    clip: bool,
+    stop_word: str | None,
+    server: str | None,
+    max_duration: float,
+) -> None:
+    import asyncio
+    import json as _json
+    import subprocess
+
+    import numpy as np
+    import sounddevice as sd
+    import websockets  # type: ignore
+    from rich.live import Live
+    from rich.text import Text
+
+    from .recorder import BLOCKSIZE, SAMPLE_RATE
+
+    ws_base = (server or SERVER_WS_URL).rstrip("/")
+    url = f"{ws_base}/ws/stream?language={language}&window={window}"
+
+    loop = asyncio.get_running_loop()
+    queue: asyncio.Queue[bytes | None] = asyncio.Queue()
+
+    def sd_callback(indata: np.ndarray, frames: int, t, status) -> None:
+        data = indata[:, 0].copy().astype(np.float32)
+        loop.call_soon_threadsafe(queue.put_nowait, data.tobytes())
+
+    confirmed: list[str] = []
+    partial_buf = ""
+    # Mutable container — acessível de closures aninhadas sem nonlocal
+    state = {"stop": False}
+
+    def _render() -> Text:
+        txt = Text()
+        if confirmed:
+            txt.append(" ".join(confirmed), style="dim")
+            txt.append(" ")
+        if partial_buf:
+            txt.append(partial_buf.lstrip(), style="bold cyan")
+        return txt
+
+    try:
+        async with websockets.connect(url, max_size=2**23) as ws:
+            # session_start
+            raw = await ws.recv()
+            info = _json.loads(raw)
+            console.print(
+                f"[dim]WS conectado | modelo [bold]{info.get('model')}[/bold] "
+                f"| device {info.get('device')} | janela {info.get('window_s')}s[/dim]\n"
+            )
+
+            deadline = loop.time() + max_duration
+
+            async def _send_loop() -> None:
+                with sd.InputStream(
+                    samplerate=SAMPLE_RATE,
+                    channels=1,
+                    dtype="float32",
+                    blocksize=BLOCKSIZE,
+                    callback=sd_callback,
+                ):
+                    while loop.time() < deadline and not state["stop"]:
+                        try:
+                            chunk = await asyncio.wait_for(queue.get(), timeout=1.0)
+                        except asyncio.TimeoutError:
+                            continue
+                        if chunk is None:
+                            break
+                        await ws.send(chunk)
+                # Sinaliza encerramento
+                await queue.put(None)
+
+            send_task = asyncio.create_task(_send_loop())
+
+            with Live(console=console, refresh_per_second=10) as live:
+                try:
+                    async for raw_msg in ws:
+                        if not isinstance(raw_msg, str):
+                            continue
+                        data = _json.loads(raw_msg)
+                        t = data.get("type")
+
+                        if t == "partial":
+                            partial_buf += data.get("text", "")
+                            if stop_word and stop_word.lower() in partial_buf.lower():
+                                state["stop"] = True
+                                await ws.send(_json.dumps({"cmd": "stop"}))
+                                break
+                            live.update(_render())
+
+                        elif t == "final":
+                            seg_text = data.get("text", "").strip()
+                            if seg_text:
+                                confirmed.append(seg_text)
+                            partial_buf = ""
+                            live.update(_render())
+
+                except websockets.exceptions.ConnectionClosed:
+                    pass
+
+            send_task.cancel()
+            try:
+                await send_task
+            except asyncio.CancelledError:
+                pass
+
+    except Exception as exc:
+        console.print(f"[red]Erro WebSocket: {exc}[/red]")
+
+    full_text = " ".join(confirmed).strip()
+    if full_text:
+        console.print(
+            Panel(full_text, title="✅ Transcrição final", border_style="green")
+        )
+        if clip:
+            try:
+                import subprocess as _sp
+                _sp.run(["wl-copy", full_text], check=True, timeout=5)
+                console.print("[dim]Copiado para o clipboard.[/dim]")
+            except FileNotFoundError:
+                console.print("[yellow]wl-copy não encontrado.[/yellow]")
+            except Exception:
+                pass
+    else:
+        console.print("[yellow]Nenhum texto transcrito.[/yellow]")
+
+
 if __name__ == "__main__":
     cli()

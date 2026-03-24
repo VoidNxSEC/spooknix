@@ -13,3 +13,6 @@ aiofiles>=23.0.0
 # CLI
 click>=8.1.0
 rich>=13.0.0
+
+# Signal processing (audio pipeline)
+scipy>=1.12.0

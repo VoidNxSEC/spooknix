@@ -1,0 +1,47 @@
+# deploy/Dockerfile.prod — multi-stage, non-root, HEALTHCHECK
+# Otimizado para produção: B200/B300 (float16) ou RTX (int8_float16)
+
+# ── Stage 1: Python deps builder ─────────────────────────────────────────────
+FROM python:3.13-slim AS builder
+
+WORKDIR /build
+COPY requirements.txt .
+
+RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+
+
+# ── Stage 2: Runtime com CUDA ────────────────────────────────────────────────
+FROM pytorch/pytorch:2.8.0-cuda12.9-cudnn9-runtime
+
+# Dependências do sistema
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    libsndfile1 \
+    libopenblas-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copiar pacotes Python instalados no builder
+COPY --from=builder /install /usr/local
+
+# Criar usuário não-root
+RUN groupadd -r spooknix && useradd -r -g spooknix -d /app -s /sbin/nologin spooknix
+
+WORKDIR /app
+
+# Copiar código fonte
+COPY src/ ./src/
+
+# Diretórios de output com permissão correta
+RUN mkdir -p /app/outputs/transcripts /app/outputs/subtitles \
+    && chown -R spooknix:spooknix /app
+
+USER spooknix
+
+EXPOSE 8000
+
+# HEALTHCHECK — aguarda 120s para o modelo carregar
+HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)" \
+    || exit 1
+
+CMD ["python", "-m", "src.server"]

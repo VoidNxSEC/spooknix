@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "spooknix.fullname" . }}-config
+  labels:
+    app: {{ include "spooknix.name" . }}
+data:
+  MODEL_SIZE: {{ .Values.model.size | quote }}
+  DEVICE: {{ .Values.model.device | quote }}
+  COMPUTE_TYPE: {{ .Values.model.computeType | quote }}
+  ENABLE_DIARIZATION: {{ .Values.env.ENABLE_DIARIZATION | quote }}
+  HOST: "0.0.0.0"
+  PORT: "8000"

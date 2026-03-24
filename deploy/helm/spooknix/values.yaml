@@ -1,0 +1,81 @@
+# deploy/helm/spooknix/values.yaml
+# Configuração padrão — B200/B300 NVIDIA Inception fleet
+
+replicaCount: 1
+
+image:
+  repository: spooknix
+  tag: "0.5.0"
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 8000
+
+# GPU: RTX local ou B200/B300 na frota NVIDIA Inception
+nodeSelector:
+  accelerator: nvidia-b200   # trocar para nvidia-b300 ou nvidia-rtx3050 conforme nó
+
+resources:
+  limits:
+    nvidia.com/gpu: "1"
+    memory: "16Gi"
+    cpu: "4"
+  requests:
+    nvidia.com/gpu: "1"
+    memory: "8Gi"
+    cpu: "2"
+
+# Configuração do modelo
+model:
+  size: large-v3
+  device: cuda
+  # B200/B300 tem 80 GB HBM3e — float16 para qualidade máxima
+  # RTX 3050 6 GB — usar int8_float16
+  computeType: float16
+
+# Variáveis de ambiente do servidor
+env:
+  MODEL_SIZE: large-v3
+  DEVICE: cuda
+  COMPUTE_TYPE: float16
+  ENABLE_DIARIZATION: "false"
+  HOST: "0.0.0.0"
+  PORT: "8000"
+
+# Secrets (HF_TOKEN via SOPS/sealed-secrets)
+secrets:
+  hfTokenSecretName: spooknix-hf-token
+  hfTokenKey: HF_TOKEN
+
+# Persistent Volume para cache HuggingFace
+persistence:
+  enabled: true
+  storageClass: ""
+  accessMode: ReadWriteOnce
+  size: 20Gi
+  mountPath: /root/.cache/huggingface
+
+# HPA — escala por sessões WebSocket ativas
+autoscaling:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 10
+  targetActiveSessionsAvgValue: 5   # custom metric: spooknix_active_sessions
+
+# Probes
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 8000
+  initialDelaySeconds: 120   # aguarda modelo carregar
+  periodSeconds: 30
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /health
+    port: 8000
+  initialDelaySeconds: 60
+  periodSeconds: 10
+  failureThreshold: 5

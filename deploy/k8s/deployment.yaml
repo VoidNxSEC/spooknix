@@ -1,0 +1,71 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spooknix
+  labels:
+    app: spooknix
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: spooknix
+  template:
+    metadata:
+      labels:
+        app: spooknix
+    spec:
+      runtimeClassName: nvidia
+      nodeSelector:
+        accelerator: nvidia-b200
+      containers:
+        - name: spooknix
+          image: spooknix:0.5.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+              name: http
+          env:
+            - name: MODEL_SIZE
+              value: large-v3
+            - name: DEVICE
+              value: cuda
+            - name: COMPUTE_TYPE
+              value: float16
+            - name: ENABLE_DIARIZATION
+              value: "false"
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: spooknix-hf-token
+                  key: HF_TOKEN
+                  optional: true
+          resources:
+            limits:
+              nvidia.com/gpu: "1"
+              memory: 16Gi
+              cpu: "4"
+            requests:
+              nvidia.com/gpu: "1"
+              memory: 8Gi
+              cpu: "2"
+          volumeMounts:
+            - name: hf-cache
+              mountPath: /root/.cache/huggingface
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 120
+            periodSeconds: 30
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            failureThreshold: 5
+      volumes:
+        - name: hf-cache
+          persistentVolumeClaim:
+            claimName: spooknix-hf-cache

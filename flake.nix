@@ -57,6 +57,10 @@
           portaudio    # backend C do sounddevice
           wl-clipboard # wl-copy para clipboard Wayland
 
+          # Signal processing (scipy system libs)
+          blas
+          lapack
+
           # Utils
           just
 

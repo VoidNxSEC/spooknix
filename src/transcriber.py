@@ -5,7 +5,9 @@ Nenhum dado sai da máquina local.
 """
 
 from pathlib import Path
+from typing import Generator
 from faster_whisper import WhisperModel
+import numpy as np
 import time
 
 
@@ -114,6 +116,65 @@ def transcribe_file(model, audio_path: str, language: str = "pt", on_progress=No
         "language": info.language,
         "duration": info.duration
     }
+
+
+def transcribe_stream(
+    model: WhisperModel,
+    audio: np.ndarray,
+    language: str = "pt",
+    chunk_length_s: int = 3,
+) -> Generator[dict, None, None]:
+    """Transcreve um array numpy diretamente, gerando segmentos conforme decodifica.
+
+    Usa o generator nativo do faster-whisper — sem arquivo temporário por janela.
+    condition_on_previous_text=True mantém contexto conversacional entre chunks.
+
+    Args:
+        model: Instância WhisperModel já carregada.
+        audio: Array float32 normalizado em [-1, 1] a 16 kHz.
+        language: Código do idioma.
+        chunk_length_s: Tamanho do chunk interno do faster-whisper (segundos).
+
+    Yields:
+        dict com {start, end, text, words, avg_confidence}
+    """
+    if audio.size == 0:
+        return
+
+    segments, _info = model.transcribe(
+        audio,
+        language=language,
+        beam_size=5,
+        temperature=0.0,
+        vad_filter=True,
+        word_timestamps=True,
+        chunk_length=chunk_length_s,
+        condition_on_previous_text=True,
+        batch_size=8,
+    )
+
+    for segment in segments:
+        words = []
+        probs: list[float] = []
+        if getattr(segment, "words", None):
+            for w in segment.words:
+                words.append({
+                    "start": w.start,
+                    "end": w.end,
+                    "word": w.word,
+                    "probability": w.probability,
+                })
+                probs.append(w.probability)
+
+        avg_confidence = float(sum(probs) / len(probs)) if probs else 0.0
+
+        yield {
+            "start": segment.start,
+            "end": segment.end,
+            "text": segment.text.strip(),
+            "words": words,
+            "avg_confidence": avg_confidence,
+        }
 
 
 def generate_srt(segments: list, output_path: str):
