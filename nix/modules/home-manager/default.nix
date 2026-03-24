@@ -25,6 +25,9 @@ let
     ps.pyqt6
     ps.pyqt6-sip
     ps.requests
+    ps.numpy
+    ps.sounddevice
+    ps.scipy
   ]);
 
   # Script wrapper que aponta PYTHONPATH para o source
@@ -51,7 +54,7 @@ let
     ];
     text = ''
       cd "${cfg.sourcePath}"
-      exec poetry run python -m src.cli record --model large-v3 --clip
+      exec poetry run python -m src.cli record --model ${cfg.model} --clip
     '';
   };
 in
@@ -76,6 +79,18 @@ in
       type = types.bool;
       default = true;
       description = "Iniciar automaticamente com a sessão gráfica.";
+    };
+
+    model = mkOption {
+      type = types.enum [
+        "tiny"
+        "base"
+        "small"
+        "medium"
+        "large-v3"
+      ];
+      default = "large-v3";
+      description = "Modelo Whisper usado pelo spooknix-record (atalho de gravação).";
     };
 
     hyprland = {

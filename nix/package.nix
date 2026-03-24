@@ -11,6 +11,9 @@ let
     ps.pyqt6
     ps.pyqt6-sip
     ps.requests
+    ps.numpy
+    ps.sounddevice
+    ps.scipy
   ]);
 
   guiScript = writeShellApplication {

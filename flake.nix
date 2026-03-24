@@ -22,10 +22,13 @@
       };
 
       # ── GUI package (thin client — sem torch/ML) ──────────────────────────
-      guiPkg = pkgs.python3.withPackages (ps: [
+      guiPkg = pkgs.python313.withPackages (ps: [
         ps.pyqt6
         ps.pyqt6-sip
         ps.requests
+        ps.numpy
+        ps.sounddevice
+        ps.scipy
       ]);
 
       spooknixGui = pkgs.writeShellApplication {
