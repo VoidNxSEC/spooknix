@@ -2,7 +2,7 @@
 name = "spooknix"
 version = "0.5.0"
 description = "Privacy-first Speech-to-Text Engine"
-authors = ["Pina <voidnx@labs>"]
+authors = ["voidnxlabs <dev@voidnxlabs.io>"]
 readme = "README.md"
 packages = [{ include = "src" }]
 
@@ -23,6 +23,8 @@ scipy = ">=1.12.0"
 # CLI
 click = ">=8.1.0"
 rich = ">=13.0.0"
+# MCP server
+mcp = ">=1.0.0"
 
 [tool.poetry.group.gui]
 optional = true
@@ -43,6 +45,7 @@ pytest = "^9.0.2"
 [tool.poetry.scripts]
 spooknix     = "src.cli:cli"
 spooknix-gui = "src.gui:main"
+spooknix-mcp = "src.mcp_tool:main"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]

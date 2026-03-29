@@ -38,7 +38,7 @@ in
         "large-v2"
         "large-v3"
       ];
-      default = "small";
+      default = "large-v3";
       description = "Tamanho do modelo Whisper.";
     };
 
