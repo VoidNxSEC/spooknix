@@ -185,13 +185,16 @@ in
       "custom/spooknix" = {
         format = "{}";
         exec = pkgs.writeShellScript "spooknix-waybar" ''
-          URL="${cfg.serverUrl}/health"
-          RESP=$(${pkgs.curl}/bin/curl -sf --max-time 2 "$URL" 2>/dev/null || echo '{}')
-
-          if echo "$RESP" | ${pkgs.gnugrep}/bin/grep -q '"status":"ok"'; then
-            MODEL=$(echo "$RESP" | ${pkgs.gnused}/bin/sed 's/.*"model":"\([^"]*\)".*/\1/')
-            DEVICE=$(echo "$RESP" | ${pkgs.gnused}/bin/sed 's/.*"device":"\([^"]*\)".*/\1/')
-            echo "{\"text\": \"🎙 $MODEL\", \"class\": \"active\", \"tooltip\": \"Spooknix online · $DEVICE\"}"
+          if /run/current-system/sw/bin/docker ps --format '{{.Names}}' 2>/dev/null | ${pkgs.gnugrep}/bin/grep -q 'spooknix'; then
+            URL="${cfg.serverUrl}/health"
+            RESP=$(${pkgs.curl}/bin/curl -sf --max-time 2 "$URL" 2>/dev/null || echo '{}')
+            if echo "$RESP" | ${pkgs.gnugrep}/bin/grep -q '"status":"ok"'; then
+              MODEL=$(echo "$RESP" | ${pkgs.gnused}/bin/sed 's/.*"model":"\([^"]*\)".*/\1/')
+              DEVICE=$(echo "$RESP" | ${pkgs.gnused}/bin/sed 's/.*"device":"\([^"]*\)".*/\1/')
+              echo "{\"text\": \"🎙 $MODEL\", \"class\": \"active\", \"tooltip\": \"Spooknix online · $DEVICE\"}"
+            else
+              echo "{\"text\": \"🎙\", \"class\": \"active\", \"tooltip\": \"Spooknix booting / container running\"}"
+            fi
           else
             echo '{"text": "🎙", "class": "inactive", "tooltip": "Spooknix offline"}'
           fi

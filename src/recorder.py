@@ -29,7 +29,7 @@ class RecordingError(RuntimeError):
 def record_until_silence(
     silence_duration: float = 2.0,
     silence_threshold: float = 0.01,
-    max_duration: float = 120.0,
+    max_duration: float = 360.0,
     samplerate: int = SAMPLE_RATE,
     stop_check_fn: Callable[[bytes], bool] | None = None,
     stop_check_interval: float = 2.0,
