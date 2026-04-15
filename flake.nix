@@ -9,7 +9,11 @@
   };
 
   outputs =
-    { self, nixpkgs, sops-nix }:
+    {
+      self,
+      nixpkgs,
+      sops-nix,
+    }:
     let
       system = "x86_64-linux";
 
@@ -29,11 +33,16 @@
         ps.numpy
         ps.sounddevice
         ps.scipy
+        ps.click
       ]);
 
       spooknixGui = pkgs.writeShellApplication {
         name = "spooknix-gui";
-        runtimeInputs = [ guiPkg pkgs.portaudio pkgs.wl-clipboard ];
+        runtimeInputs = [
+          guiPkg
+          pkgs.portaudio
+          pkgs.wl-clipboard
+        ];
         text = ''
           export PYTHONPATH="${self}''${PYTHONPATH:+:$PYTHONPATH}"
           exec python -m src.gui "$@"
@@ -49,7 +58,7 @@
         packages = with pkgs; [
           # Python + gerenciador de pacotes
           python313
-          python313Packages.click
+          python313Packages.clicko
           poetry
 
           # CUDA
@@ -58,7 +67,7 @@
 
           # Áudio
           ffmpeg
-          portaudio    # backend C do sounddevice
+          portaudio # backend C do sounddevice
           wl-clipboard # wl-copy para clipboard Wayland
 
           # Signal processing (scipy system libs)

@@ -97,10 +97,8 @@ in
 
       # NVIDIA GPU passthrough (CDI)
       extraOptions = lib.optionals (cfg.device == "cuda") [
-        "--gpus"
-        "all"
-        "--runtime"
-        "nvidia"
+        "--device"
+        "nvidia.com/gpu=all"
       ];
     };
 
