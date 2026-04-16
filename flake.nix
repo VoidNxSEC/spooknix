@@ -58,7 +58,7 @@
         packages = with pkgs; [
           # Python + gerenciador de pacotes
           python313
-          python313Packages.clicko
+          python313Packages.click
           poetry
 
           # CUDA

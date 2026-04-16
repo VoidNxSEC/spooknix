@@ -1,0 +1,25 @@
+name: Zizmor GHA Hardening
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  zizmor:
+    runs-on: [self-hosted, nixos]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Run zizmor
+        uses: woodruffw/zizmor-action@v1
+        with:
+          args: "--format sarif . > results.sarif"
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: results.sarif

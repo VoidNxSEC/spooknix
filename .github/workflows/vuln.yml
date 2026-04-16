@@ -1,0 +1,30 @@
+# .github/workflows/vuln.yml
+name: Vulnerability Scan
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 6 * * 1" # toda segunda
+
+jobs:
+  grype:
+    runs-on: [self-hosted, nixos]
+    permissions:
+      security-events: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Grype filesystem scan
+        uses: anchore/scan-action@d43cc1dfea6a99ed123bf8f83133466bc54fd82b # v6
+        id: scan
+        with:
+          path: "."
+          fail-build: true
+          severity-cutoff: high
+          output-format: sarif
+
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: ${{ steps.scan.outputs.sarif }}
