@@ -11,7 +11,8 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn, BarColumn, TimeRemainingColumn
 
-console = Console()
+console = Console(stderr=True)
+out_console = Console()
 
 
 @click.group()
@@ -42,7 +43,7 @@ def info():
     )
     table.add_row("Idioma padrão", "pt (Português)")
 
-    console.print(table)
+    out_console.print(table)
 
 
 @cli.command()
@@ -158,7 +159,9 @@ SERVER_URL = os.getenv("SPOOKNIX_URL", "http://localhost:8000")
               help="Palavra-chave falada para parar a gravação (ex: 'stop', 'para')")
 @click.option("--diarize/--no-diarize", default=False,
               help="Ativar diarização de speakers via pyannote-audio (requer HF_TOKEN)")
-def record(language, silence, threshold, clip, max_duration, server, stop_word, diarize):
+@click.option("--out", default=None, type=click.Path(dir_okay=False, writable=True),
+              help="Salvar a transcrição final em um arquivo de texto/markdown")
+def record(language, silence, threshold, clip, max_duration, server, stop_word, diarize, out):
     """Grava do microfone e transcreve via servidor HTTP."""
     import os
     import subprocess
@@ -292,7 +295,10 @@ def record(language, silence, threshold, clip, max_duration, server, stop_word, 
             speaker_lines = []
             for seg in result.get("segments", []):
                 spk = seg.get("speaker", "?")
-                speaker_lines.append(f"[bold]{spk}[/bold]: {seg['text']}")
+                if out_console.is_terminal:
+                    speaker_lines.append(f"[bold]{spk}[/bold]: {seg['text']}")
+                else:
+                    speaker_lines.append(f"{spk}: {seg['text']}")
             body = "\n".join(speaker_lines) or "(sem texto detectado)"
         else:
             body = text or "(sem texto detectado)"
@@ -301,7 +307,17 @@ def record(language, silence, threshold, clip, max_duration, server, stop_word, 
         if diarized:
             title += " — diarizado"
 
-        console.print(Panel(body, title=title, border_style="green"))
+        if out_console.is_terminal:
+            out_console.print(Panel(body, title=title, border_style="green"))
+        else:
+            print(body)
+
+        if out:
+            try:
+                Path(out).write_text(body, encoding="utf-8")
+                console.print(f"[dim]💾 Salvo em: {out}[/dim]")
+            except Exception as exc:
+                console.print(f"[red]Erro ao salvar arquivo: {exc}[/red]")
 
         # Clipboard
         if clip and text:
@@ -337,10 +353,12 @@ SERVER_WS_URL = os.getenv("SPOOKNIX_WS_URL", "ws://localhost:8000")
               help=f"URL base do servidor WebSocket (padrão: $SPOOKNIX_WS_URL ou {SERVER_WS_URL})")
 @click.option("--max-duration", default=300.0, type=float, show_default=True,
               help="Duração máxima da sessão em segundos")
-def stream(language, window, clip, stop_word, server, max_duration):
+@click.option("--out", default=None, type=click.Path(dir_okay=False, writable=True),
+              help="Salvar a transcrição final em um arquivo de texto/markdown")
+def stream(language, window, clip, stop_word, server, max_duration, out):
     """Stream do microfone com transcrição parcial em tempo real via WebSocket."""
     import asyncio
-    asyncio.run(_stream_async(language, window, clip, stop_word, server, max_duration))
+    asyncio.run(_stream_async(language, window, clip, stop_word, server, max_duration, out))
 
 
 async def _stream_async(
@@ -350,7 +368,8 @@ async def _stream_async(
     stop_word: str | None,
     server: str | None,
     max_duration: float,
-) -> None:
+    out: str | None,
+):
     import asyncio
     import json as _json
     import subprocess
@@ -457,9 +476,20 @@ async def _stream_async(
 
     full_text = " ".join(confirmed).strip()
     if full_text:
-        console.print(
-            Panel(full_text, title="✅ Transcrição final", border_style="green")
-        )
+        if out_console.is_terminal:
+            out_console.print(
+                Panel(full_text, title="✅ Transcrição final", border_style="green")
+            )
+        else:
+            print(full_text)
+        if out:
+            try:
+                from pathlib import Path
+                Path(out).write_text(full_text, encoding="utf-8")
+                console.print(f"[dim]💾 Salvo em: {out}[/dim]")
+            except Exception as exc:
+                console.print(f"[red]Erro ao salvar arquivo: {exc}[/red]")
+                
         if clip:
             try:
                 import subprocess as _sp

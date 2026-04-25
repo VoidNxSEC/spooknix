@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   semgrep:
-    runs-on: [self-hosted, nixos]
+    runs-on: hey
     permissions:
       security-events: write
     steps:
@@ -36,7 +36,7 @@ jobs:
         if: always()
 
   codeql:
-    runs-on: [self-hosted, nixos]
+    runs-on: hey
     strategy:
       fail-fast: false
       matrix:
