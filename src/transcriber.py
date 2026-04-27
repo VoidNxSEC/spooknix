@@ -41,6 +41,7 @@ def get_model(size: str = "large-v3", device: str = "cuda", compute_type: str | 
         size,
         device=device,
         compute_type=ct,
+        num_workers=4,
     )
     
     elapsed = time.time() - start
@@ -150,7 +151,6 @@ def transcribe_stream(
         word_timestamps=True,
         chunk_length=chunk_length_s,
         condition_on_previous_text=True,
-        batch_size=8,
     )
 
     for segment in segments:

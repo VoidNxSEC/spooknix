@@ -151,7 +151,7 @@ SERVER_URL = os.getenv("SPOOKNIX_URL", "http://localhost:8000")
               help="Limiar de RMS para detecção de silêncio")
 @click.option("--clip/--no-clip", default=False,
               help="Copiar resultado para clipboard via wl-copy (Wayland)")
-@click.option("--max-duration", default=120.0, type=float, show_default=True,
+@click.option("--max-duration", default=300.0, type=float, show_default=True,
               help="Duração máxima da gravação em segundos")
 @click.option("--server", default=None, show_default=True,
               help=f"URL do servidor (padrão: $SPOOKNIX_URL ou {SERVER_URL})")
@@ -277,7 +277,7 @@ def record(language, silence, threshold, clip, max_duration, server, stop_word, 
                 method="POST",
             )
             try:
-                with urllib.request.urlopen(req, timeout=60) as resp:
+                with urllib.request.urlopen(req, timeout=max_duration + 120) as resp:
                     import json
                     result = json.loads(resp.read())
             except urllib.error.URLError as exc:
@@ -295,10 +295,7 @@ def record(language, silence, threshold, clip, max_duration, server, stop_word, 
             speaker_lines = []
             for seg in result.get("segments", []):
                 spk = seg.get("speaker", "?")
-                if out_console.is_terminal:
-                    speaker_lines.append(f"[bold]{spk}[/bold]: {seg['text']}")
-                else:
-                    speaker_lines.append(f"{spk}: {seg['text']}")
+                speaker_lines.append(f"{spk}: {seg['text']}")
             body = "\n".join(speaker_lines) or "(sem texto detectado)"
         else:
             body = text or "(sem texto detectado)"
@@ -307,10 +304,8 @@ def record(language, silence, threshold, clip, max_duration, server, stop_word, 
         if diarized:
             title += " — diarizado"
 
-        if out_console.is_terminal:
-            out_console.print(Panel(body, title=title, border_style="green"))
-        else:
-            print(body)
+        console.print(Panel(body, title=title, border_style="green"))
+        print(body)
 
         if out:
             try:
@@ -476,12 +471,8 @@ async def _stream_async(
 
     full_text = " ".join(confirmed).strip()
     if full_text:
-        if out_console.is_terminal:
-            out_console.print(
-                Panel(full_text, title="✅ Transcrição final", border_style="green")
-            )
-        else:
-            print(full_text)
+        console.print(Panel(full_text, title="✅ Transcrição final", border_style="green"))
+        print(full_text)
         if out:
             try:
                 from pathlib import Path
