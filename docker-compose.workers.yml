@@ -1,0 +1,43 @@
+services:
+  llm:
+    image: ${LLM_IMAGE:?Set LLM_IMAGE in .env.brev}
+    container_name: spooknix-llm
+    entrypoint:
+      - /bin/sh
+      - -lc
+    command: ${LLM_START_COMMAND:?Set LLM_START_COMMAND in .env.brev}
+    ports:
+      - "${LLM_HOST_PORT:-8080}:${LLM_CONTAINER_PORT:-8080}"
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - LLM_MODEL=${LLM_MODEL:-qwen-3.5}
+      - HF_HOME=/models/huggingface
+      - HUGGINGFACE_HUB_CACHE=/models/huggingface/hub
+    volumes:
+      - llm_cache:/models
+    shm_size: "1g"
+    restart: unless-stopped
+
+  tts:
+    image: ${TTS_IMAGE:?Set TTS_IMAGE in .env.brev}
+    container_name: spooknix-tts
+    entrypoint:
+      - /bin/sh
+      - -lc
+    command: ${TTS_START_COMMAND:?Set TTS_START_COMMAND in .env.brev}
+    ports:
+      - "${TTS_HOST_PORT:-8001}:${TTS_CONTAINER_PORT:-8001}"
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - TTS_LANGUAGE=${TTS_LANGUAGE:-en}
+      - TTS_VOICE=${TTS_VOICE:-default_voice}
+      - HF_HOME=/models/huggingface
+      - HUGGINGFACE_HUB_CACHE=/models/huggingface/hub
+    volumes:
+      - tts_cache:/models
+    shm_size: "1g"
+    restart: unless-stopped
+
+volumes:
+  llm_cache:
+  tts_cache:

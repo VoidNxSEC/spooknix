@@ -29,6 +29,8 @@ ssh_sessions.db
 # Secrets
 .env
 .env.*
+!.env.example
+!.env.brev.example
 *.pem
 # SOPS: chave privada age — NUNCA commitar
 secrets/age.key

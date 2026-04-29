@@ -34,6 +34,7 @@
         ps.sounddevice
         ps.scipy
         ps.click
+        ps.openai
       ]);
 
       spooknixGui = pkgs.writeShellApplication {
@@ -49,6 +50,27 @@
         '';
       };
 
+      poetryWrappedCommand =
+        name: command:
+        pkgs.writeShellApplication {
+          inherit name;
+          runtimeInputs = [ pkgs.poetry ];
+          text = ''
+            exec poetry run ${command} "$@"
+          '';
+        };
+
+      spooknixCmd = poetryWrappedCommand "spooknix" "python -m src.cli";
+      spooknixGuiCmd = poetryWrappedCommand "spooknix-gui" "python -m src.gui";
+      pytestCmd = poetryWrappedCommand "pytest" "pytest";
+      pytestCovCmd = pkgs.writeShellApplication {
+        name = "pytest-cov";
+        runtimeInputs = [ pkgs.poetry ];
+        text = ''
+          exec poetry run pytest --cov=src --cov-report=term-missing "$@"
+        '';
+      };
+
     in
     {
       # ── Dev shell ─────────────────────────────────────────────────────────
@@ -60,6 +82,10 @@
           python313
           python313Packages.click
           poetry
+          spooknixCmd
+          spooknixGuiCmd
+          pytestCmd
+          pytestCovCmd
 
           # CUDA
           cudaPackages.cudatoolkit
@@ -99,9 +125,9 @@
           echo ""
 
           # Instalar dependências se necessário
-          if [ ! -f "poetry.lock" ]; then
+          if [ ! -d ".venv" ]; then
             echo "📦 Instalando dependências com Poetry..."
-            poetry install --with gui
+            poetry install --with gui --with dev
           fi
 
           echo "🐍 Python: $(poetry run python --version)"
@@ -128,17 +154,22 @@
             else
               echo "⚠️  Secrets: HF_TOKEN vazio (verifique secrets/age.key)"
             fi
+
+            export OPENAI_API_KEY
+            OPENAI_API_KEY=$(sops -d --extract '["openai_api_key"]' "$PWD/secrets/secrets.yaml" 2>/dev/null || echo "")
+            if [ -n "$OPENAI_API_KEY" ]; then
+              echo "🔑 Secrets: OPENAI_API_KEY ✓ (via SOPS)"
+            elif [ -n "$LLM_BASE_URL" ]; then
+              echo "🧠 LLM local configurado via LLM_BASE_URL=$LLM_BASE_URL"
+            else
+              echo "ℹ️  LLM: defina LLM_BASE_URL para backend local ou OPENAI_API_KEY para OpenAI"
+            fi
           else
             echo "⚠️  Secrets: secrets/age.key não encontrado"
             echo "   Gere com: age-keygen -o secrets/age.key"
           fi
           echo ""
 
-          # Aliases de conveniência — delegam para o venv do poetry
-          alias spooknix="poetry run spooknix"
-          alias spooknix-gui="poetry run spooknix-gui"
-          alias pytest="poetry run pytest"
-          alias pytest-cov="poetry run pytest --cov=src --cov-report=term-missing"
         '';
 
         # Variáveis de ambiente para CUDA, áudio e libs C++ (numpy/torch via pip)
@@ -148,8 +179,8 @@
         HF_HOME = "$HOME/.cache/huggingface";
         HUGGINGFACE_HUB_CACHE = "$HOME/.cache/huggingface/hub";
 
-        # Poetry não usa venv no path do projeto por padrão no NixOS
-        POETRY_VIRTUALENVS_IN_PROJECT = "false";
+        # Mantém o ambiente previsível para wrappers e para `nix develop --command`
+        POETRY_VIRTUALENVS_IN_PROJECT = "true";
       };
 
       # ── Packages ──────────────────────────────────────────────────────────

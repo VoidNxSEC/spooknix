@@ -97,11 +97,11 @@ def file(audio_path, language, model, output_dir, fmt):
         console=console,
     ) as progress:
         task_id = progress.add_task("Transcrevendo...", total=100.0)
-        
+
         def on_progress_cb(current, total):
             if total > 0:
                 progress.update(task_id, completed=(current / total) * 100.0)
-                
+
         result = transcribe_file(m, audio_path, language=language, on_progress=on_progress_cb)
 
     # Persiste outputs
@@ -480,7 +480,7 @@ async def _stream_async(
                 console.print(f"[dim]💾 Salvo em: {out}[/dim]")
             except Exception as exc:
                 console.print(f"[red]Erro ao salvar arquivo: {exc}[/red]")
-                
+
         if clip:
             try:
                 import subprocess as _sp
@@ -492,6 +492,122 @@ async def _stream_async(
                 pass
     else:
         console.print("[yellow]Nenhum texto transcrito.[/yellow]")
+
+
+@cli.command()
+@click.option("--language", "-l", default="en", show_default=True,
+              help="Código do idioma (padrão: en para simulação de inglês)")
+@click.option("--silence", "-s", default=2.5, type=float, show_default=True,
+              help="Segundos de silêncio para detectar fim do turno")
+@click.option("--threshold", "-t", default=0.01, type=float, show_default=True,
+              help="Nível RMS mínimo para considerar como voz")
+@click.option("--server", default=None,
+              help="URL base do servidor HTTP STT (padrão: http://localhost:8000)")
+@click.option("--model", default=None,
+              help="Modelo do LLM a ser utilizado (ex: gpt-4o, llama-3)")
+@click.option("--out", default="outputs/interviews/session.md", type=click.Path(dir_okay=False, writable=True),
+              help="Salvar o relatório final em Markdown")
+def interview(language, silence, threshold, server, model, out):
+    """Simulador interativo de entrevistas profissionais com feedback via LLM (Full-Duplex TTS)."""
+    import asyncio
+    try:
+        asyncio.run(_interview_async(language, silence, threshold, server, model, out))
+    except KeyboardInterrupt:
+        pass
+
+async def _interview_async(language, silence, threshold, server_url, model, out_path):
+    from rich.markdown import Markdown
+    from rich.panel import Panel
+    from rich.console import Console
+    import os
+    from pathlib import Path
+
+    from .llm_client import LLMClient, InterviewSession, load_template
+    from .tts_client import LocalTTSClient
+    from .orchestrator import Orchestrator, Persona, Scenario, build_system_prompt
+
+    console = Console()
+    console.print(Panel.fit("[bold green]Iniciando Orchestrator Full-Duplex...[/]\n[dim]Pressione Ctrl+C para encerrar e gerar o relatório.[/]"))
+
+    # Configura Endpoints e Dependências
+    SERVER_HTTP_URL = "http://localhost:8000"
+    base_url = (server_url or SERVER_HTTP_URL).rstrip("/")
+    if base_url.startswith("ws://"):
+        base_url = "http://" + base_url[5:]
+
+    stt_endpoint = f"{base_url}/transcribe"
+
+    try:
+        llm = LLMClient(model=model)
+        tts = LocalTTSClient() # Worker 3 local, apontando nativamente para $TTS_BASE_URL (http://localhost:8001)
+    except Exception as e:
+        console.print(f"[bold red]Erro ao inicializar Clients (LLM/TTS):[/] {e}")
+        return
+
+    # Injetando Camadas 1 e 2 dinâmicas (Dados da Sessão)
+    # Por ora, chumbaremos a Sarah, mas poderá vir via argumento da CLI depois.
+    persona_voice = os.getenv("SPOOKNIX_PERSONA_VOICE")
+    if persona_voice and any(sep in persona_voice for sep in ("/", ".")):
+        if not Path(persona_voice).exists():
+            console.print(
+                f"[yellow]Voice ref não encontrada em {persona_voice}. "
+                "Usando a voz padrão do worker TTS.[/]"
+            )
+            persona_voice = None
+
+    sarah = Persona(
+        name="Sarah",
+        system_prompt="You are a Senior Technical Recruiter. You ask precise behavioral and technical questions, challenging candidates gently but firmly. Do not be a sycophant.",
+        voice_ref_audio=persona_voice,
+        voice_ref_text="Hi, I am Sarah, your technical interviewer."
+    )
+
+    scenario = Scenario(
+        interview_type="System Design",
+        target_role="Senior Software Engineer",
+        difficulty="Standard",
+        duration_mins=15
+    )
+
+    # Constrói a sessão de Entrevista com base nas Camadas 1 e 2
+    prompt = build_system_prompt(sarah, scenario)
+    session = InterviewSession(prompt)
+
+    # Executa a Camada 3 (Full-Duplex Engine)
+    orchestrator = Orchestrator(llm=llm, tts=tts, stt_endpoint=stt_endpoint, language=language)
+
+    await orchestrator.run_session(
+        session=session,
+        persona=sarah,
+        silence_s=silence,
+        threshold=threshold,
+        model=model
+    )
+
+    # --- Relatório Final (Camada 5: Reflexão) ---
+    transcript = session.get_transcript_text()
+    if len(transcript.split()) < 10:
+        console.print("[dim]Conversa muito curta. Relatório não gerado.[/]")
+        return
+
+    console.print("\n[dim]Gerando relatório de feedback da entrevista (Camada de Reflexão). Por favor, aguarde...[/]")
+    try:
+        evaluator_prompt = load_template("evaluator.md")
+    except FileNotFoundError:
+        # Se template falhar fallback inline
+        evaluator_prompt = "You are an expert technical interview evaluator. Provide constructive feedback on the candidate's answers, grammar, and fluency based on the transcript."
+
+    evaluator_session = InterviewSession(evaluator_prompt)
+    evaluator_session.add_user_message(transcript)
+
+    report = await llm.generate(evaluator_session.get_messages(), model)
+
+    out_path_obj = Path(out_path)
+    out_path_obj.parent.mkdir(parents=True, exist_ok=True)
+    out_path_obj.write_text(report, encoding="utf-8")
+
+    console.print(Panel(Markdown(report), title="Feedback da Entrevista", expand=False))
+    console.print(f"\n[bold green]Relatório salvo em:[/] {out_path}")
 
 
 if __name__ == "__main__":

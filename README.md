@@ -4,6 +4,8 @@ Transcrição de áudio com alta fidelidade, privacy-first, sem nuvem.
 
 Baseado em [faster-whisper](https://github.com/SYSTRAN/faster-whisper) com suporte CUDA via Docker.
 
+Para o modo conversacional completo em GPU remota, veja `deploy/BREV.md`. O caminho local-first recomendado usa 3 workers separados: STT, LLM e TTS.
+
 ---
 
 ## Requisitos
@@ -11,6 +13,8 @@ Baseado em [faster-whisper](https://github.com/SYSTRAN/faster-whisper) com supor
 - NixOS / Nix com Flakes habilitado
 - Docker + NVIDIA Container Toolkit (CDI)
 - GPU NVIDIA com 4–6 GB VRAM (CPU funciona, mais lento)
+
+Observação: esse requisito cobre o STT. Para a suíte conversacional completa com LLM local + TTS local, planeje `16 GB+` de VRAM para um teste realista.
 
 ---
 
@@ -246,14 +250,34 @@ src/
 ├── server.py        ← API HTTP (aiohttp): /health, /transcribe
 └── gui.py           ← Systray PyQt6 + RecordThread
 
-nix/
-├── modules/nixos/        ← services.spooknix (Docker + NVIDIA)
-└── modules/home-manager/ ← programs.spooknix (systemd, Hyprland, Waybar)
-```
-
 ---
 
-## Testes
+## Suite Conversacional (Simulador Full-Duplex)
+
+O Spooknix conta com um **Orquestrador de Entrevistas** que simula diálogos *Full-Duplex* (você e a IA podem se interromper mutuamente), focado no treino prático para vagas técnicas.
+
+### Arquitetura em 5 Camadas
+
+A arquitetura do simulador foi desenhada para isolar o estado da conversa do processamento pesado:
+
+1. **Personas & Cenários (Camadas 1 e 2):** Injeção dinâmica de perfis (ex: Recrutadora Americana Sênior) e cenários (System Design, Behavioral).
+2. **Orquestrador Async (Camada 3):** O cérebro local. Uma máquina de 3 estados (`LISTENING`, `PROCESSING`, `SPEAKING`).
+    - *Barge-in Nativo:* Usa o microfone para interromper o *playback* e o raciocínio da IA em tempo real.
+    - *Sentence Chunking:* Não espera o LLM gerar todo o texto. Envia frase a frase para o TTS, reduzindo o delay inicial a milissegundos.
+3. **PipeWire (O Hub Acústico):** O Spooknix não inventa a roda com filtros de ruído no Python. Delega o AEC (Acoustic Echo Cancellation) e supressão de ruído ao servidor de áudio do sistema operacional, pegando sinais cruzos do microfone (fone/iPhone) e cuspindo PCM limpo no alto-falante.
+4. **Workers GPU (Camada 4):** Serviços "burros" acessados via rede local.
+    - **STT:** `faster-whisper` (Docker local via Porta 8000).
+    - **LLM:** OpenAI API-compatible (pode apontar para um Ollama ou vLLM).
+    - **TTS:** Integrado ao **F5-TTS** (suporta *Zero-Shot Voice Cloning* e baixíssima latência), operando na porta 8001.
+5. **Reflexão (Camada 5):** Ao final do `Ctrl+C`, o histórico é enviado ao LLM com um *System Prompt* de avaliação (Evaluator) que gera um relatório Markdown (`outputs/interviews/session.md`) sobre a performance, vocabulário e inglês do candidato.
+
+**Como rodar:**
+
+```bash
+spooknix interview --language en --silence 2.0 --threshold 0.03
+```
+*Dica:* Ajuste o `--threshold` de acordo com a captação de fundo do seu microfone.
+
 
 ```bash
 # Suite completa (sem GPU, sem microfone)
@@ -274,4 +298,4 @@ pytest-cov
 | Sprint 1 | ✅ Completo | `cli.py`, `server.py`, API HTTP                          |
 | Sprint 2 | ✅ Completo | Progress bar Rich, VAD integrado                         |
 | Sprint 3 | ✅ Completo | Gravação por microfone, GUI systray, hotkey SUPER+R      |
-| Sprint 4 | Pendente    | Diarização de speakers, MCP integration                  |
+| Sprint 4 | ✅ Completo | Diarização de speakers, MCP integration, Suite Conversacional Full-Duplex (Orquestrador + F5-TTS + PipeWire) |
