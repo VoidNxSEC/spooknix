@@ -18,7 +18,7 @@ concurrency:
 jobs:
   sbom:
     name: SBOM generation
-    runs-on: self-hosted
+    runs-on: [self-hosted, nixos]
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
@@ -32,7 +32,7 @@ jobs:
 
   vulnerability-scan:
     name: Filesystem vulnerability scan
-    runs-on: self-hosted
+    runs-on: [self-hosted, nixos]
     timeout-minutes: 20
     permissions:
       contents: read
@@ -58,7 +58,7 @@ jobs:
   scorecard:
     name: OSSF Scorecard
     if: ${{ github.event_name != 'pull_request' }}
-    runs-on: self-hosted
+    runs-on: [self-hosted, nixos]
     timeout-minutes: 20
     permissions:
       actions: read

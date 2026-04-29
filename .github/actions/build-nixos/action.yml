@@ -29,7 +29,7 @@ outputs:
     description: "Path to build result"
     value: ${{ steps.build.outputs.path }}
   closure-size:
-    description: "Closure size in MB"
+    description: "Closure size"
     value: ${{ steps.analyze.outputs.size }}
   build-time:
     description: "Build time in seconds"
@@ -54,7 +54,7 @@ runs:
 
         BUILD_CMD="nix build ${{ inputs.config-path }}"
 
-        if [ "${{ inputs.show-trace }}" == "true" ]; then
+        if [ "${{ inputs.show-trace }}" = "true" ]; then
           BUILD_CMD="$BUILD_CMD --show-trace"
         fi
 
@@ -66,8 +66,8 @@ runs:
         END_TIME=$(date +%s)
         BUILD_TIME=$((END_TIME - START_TIME))
 
-        echo "path=$BUILD_PATH" >> $GITHUB_OUTPUT
-        echo "time=$BUILD_TIME" >> $GITHUB_OUTPUT
+        echo "path=$BUILD_PATH" >> "$GITHUB_OUTPUT"
+        echo "time=$BUILD_TIME" >> "$GITHUB_OUTPUT"
 
         echo "✅ Build completed in ${BUILD_TIME}s"
         echo "📦 Build path: $BUILD_PATH"
@@ -81,13 +81,10 @@ runs:
         CLOSURE_INFO=$(nix path-info -Sh ${{ steps.build.outputs.path }})
         echo "$CLOSURE_INFO"
 
-        # Extract size (handles MB, GB, etc.)
         SIZE_RAW=$(echo "$CLOSURE_INFO" | awk '{print $2}')
-        echo "size=$SIZE_RAW" >> $GITHUB_OUTPUT
+        echo "size=$SIZE_RAW" >> "$GITHUB_OUTPUT"
 
-        # Convert to MB for comparison (handle G suffix for GB)
         if [[ "$SIZE_RAW" == *G ]]; then
-          # Convert GB to MB
           SIZE_NUM=$(echo "$SIZE_RAW" | sed 's/[^0-9.]//g')
           SIZE_MB=$(awk "BEGIN {print int($SIZE_NUM * 1024)}")
 
@@ -110,10 +107,7 @@ runs:
       run: |
         echo "🧪 Running tests..."
 
-        # Test if configuration can be evaluated
         nix eval ${{ inputs.config-path }} --apply 'x: "ok"'
-
-        # Check for eval warnings
         nix eval ${{ inputs.config-path }} --show-trace 2>&1 | grep -i "warning" || true
 
         echo "✅ Tests passed"
@@ -124,8 +118,8 @@ runs:
       run: |
         echo "📤 Pushing to Cachix..."
 
-        if command -v cachix &> /dev/null; then
-          cachix push $(cachix cache list | head -1) ${{ steps.build.outputs.path }}
+        if command -v cachix > /dev/null 2>&1; then
+          cachix push "$(cachix cache list | head -1)" ${{ steps.build.outputs.path }}
           echo "✅ Pushed to Cachix"
         else
           echo "⚠️  Cachix not available, skipping push"
@@ -134,11 +128,11 @@ runs:
     - name: Generate build report
       shell: bash
       run: |
-        echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "- **Target**: ${{ inputs.target }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **Build Time**: ${{ steps.build.outputs.time }}s" >> $GITHUB_STEP_SUMMARY
-        echo "- **Closure Size**: ${{ steps.analyze.outputs.size }}MB" >> $GITHUB_STEP_SUMMARY
-        echo "- **Build Path**: \`${{ steps.build.outputs.path }}\`" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "✅ Build completed successfully" >> $GITHUB_STEP_SUMMARY
+        echo "## Build Summary" >> "$GITHUB_STEP_SUMMARY"
+        echo "" >> "$GITHUB_STEP_SUMMARY"
+        echo "- **Target**: ${{ inputs.target }}" >> "$GITHUB_STEP_SUMMARY"
+        echo "- **Build Time**: ${{ steps.build.outputs.time }}s" >> "$GITHUB_STEP_SUMMARY"
+        echo "- **Closure Size**: ${{ steps.analyze.outputs.size }}" >> "$GITHUB_STEP_SUMMARY"
+        echo "- **Build Path**: \`${{ steps.build.outputs.path }}\`" >> "$GITHUB_STEP_SUMMARY"
+        echo "" >> "$GITHUB_STEP_SUMMARY"
+        echo "✅ Build completed successfully" >> "$GITHUB_STEP_SUMMARY"

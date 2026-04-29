@@ -1,0 +1,132 @@
+# NixOS CI/CD Template
+# Copy this file into `.github/workflows/ci.yml` in a NixOS-host repo.
+
+name: NixOS CI/CD
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: "Deploy after build"
+        required: false
+        default: false
+        type: boolean
+
+env:
+  CACHIX_NAME: voidnxlabs
+  CONFIG_PATH: ".#nixosConfigurations.kernelcore.config.system.build.toplevel"
+
+concurrency:
+  group: nixos-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pr-validation:
+    name: Validate Pull Request
+    if: github.event_name == 'pull_request'
+    runs-on: [self-hosted, nixos]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@8887e596b4ee1134dae06b98d573bd674693f47c # v30
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          extra_nix_config: |
+            accept-flake-config = true
+
+      - name: Configure Cachix
+        if: ${{ secrets.CACHIX_AUTH_TOKEN != '' }}
+        uses: cachix/cachix-action@ad2ddac53f961de1989924296a1f236fcfbaa4fc # v15
+        with:
+          name: ${{ env.CACHIX_NAME }}
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
+      - name: Check formatting
+        run: nix fmt -- --check .
+
+      - name: Build configuration
+        uses: ./.github/actions/build-nixos
+        with:
+          config-path: ${{ env.CONFIG_PATH }}
+          enable-tests: true
+
+  build:
+    name: Build Configuration
+    if: github.event_name == 'push'
+    runs-on: [self-hosted, nixos]
+    outputs:
+      build-path: ${{ steps.build.outputs.build-path }}
+      closure-size: ${{ steps.build.outputs.closure-size }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@8887e596b4ee1134dae06b98d573bd674693f47c # v30
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          extra_nix_config: |
+            accept-flake-config = true
+
+      - name: Configure Cachix
+        if: ${{ secrets.CACHIX_AUTH_TOKEN != '' }}
+        uses: cachix/cachix-action@ad2ddac53f961de1989924296a1f236fcfbaa4fc # v15
+        with:
+          name: ${{ env.CACHIX_NAME }}
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
+      - name: Build NixOS configuration
+        id: build
+        uses: ./.github/actions/build-nixos
+        with:
+          config-path: ${{ env.CONFIG_PATH }}
+          enable-tests: true
+          cachix-push: true
+
+  deploy:
+    name: Deploy to Production
+    needs: build
+    if: |
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_dispatch' && inputs.deploy)
+    runs-on: [self-hosted, nixos]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+
+      - name: Deploy configuration
+        run: |
+          echo "🚀 Deploying to production..."
+          sudo nixos-rebuild switch --flake .#yourhost
+
+      - name: Verify deployment
+        run: |
+          echo "🔍 Verifying deployment..."
+          systemctl --failed || true
+          journalctl -p err -n 20 --no-pager || true
+
+      - name: Notify success
+        if: success()
+        uses: ./.github/actions/notify
+        with:
+          status: success
+          title: "Production deployment successful"
+          message: "Commit ${{ github.sha }} deployed successfully"
+          discord-webhook: ${{ secrets.DISCORD_WEBHOOK }}
+
+      - name: Notify failure
+        if: failure()
+        uses: ./.github/actions/notify
+        with:
+          status: failure
+          title: "Production deployment failed"
+          message: "Deployment failed. Manual intervention required."
+          discord-webhook: ${{ secrets.DISCORD_WEBHOOK }}
+          create-issue-on-failure: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}

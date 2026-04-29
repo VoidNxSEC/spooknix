@@ -18,7 +18,7 @@ concurrency:
 jobs:
   secrets:
     name: Secret leak detection
-    runs-on: self-hosted
+    runs-on: [self-hosted, nixos]
     timeout-minutes: 15
     permissions:
       contents: read
@@ -34,7 +34,7 @@ jobs:
 
   workflow-hygiene:
     name: Workflow hygiene
-    runs-on: self-hosted
+    runs-on: [self-hosted, nixos]
     timeout-minutes: 10
     permissions:
       contents: read
@@ -46,7 +46,7 @@ jobs:
 
   semgrep:
     name: Semgrep
-    runs-on: self-hosted
+    runs-on: [self-hosted, nixos]
     timeout-minutes: 20
     permissions:
       contents: read
@@ -71,7 +71,7 @@ jobs:
 
   codeql:
     name: CodeQL
-    runs-on: self-hosted
+    runs-on: [self-hosted, nixos]
     timeout-minutes: 30
     permissions:
       actions: read
