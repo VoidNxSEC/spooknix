@@ -1,0 +1,90 @@
+name: Supply Chain Assurance
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+  schedule:
+    - cron: "50 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: supply-chain-assurance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sbom:
+    name: SBOM generation
+    runs-on: self-hosted
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+
+      - name: Generate CycloneDX SBOM
+        uses: anchore/sbom-action@e11c554f704a0b820cbf8c51673f6945e0731532 # v0.20
+        with:
+          path: .
+          format: cyclonedx-json
+          artifact-name: sbom.cyclonedx.json
+
+  vulnerability-scan:
+    name: Filesystem vulnerability scan
+    runs-on: self-hosted
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+
+      - name: Grype filesystem scan
+        id: scan
+        uses: anchore/scan-action@d43cc1dfea6a99ed123bf8f83133466bc54fd82b # v6
+        with:
+          path: .
+          fail-build: true
+          severity-cutoff: high
+          output-format: sarif
+
+      - name: Upload Grype SARIF
+        if: ${{ always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false) }}
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: ${{ steps.scan.outputs.sarif }}
+
+  scorecard:
+    name: OSSF Scorecard
+    if: ${{ github.event_name != 'pull_request' }}
+    runs-on: self-hosted
+    timeout-minutes: 20
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+      security-events: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          persist-credentials: false
+
+      - name: Run Scorecard analysis
+        uses: ossf/scorecard-action@v2.4.0
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          publish_results: true
+
+      - name: Upload Scorecard artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: scorecard-sarif
+          path: results.sarif
+          retention-days: 5
+
+      - name: Upload Scorecard SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: results.sarif

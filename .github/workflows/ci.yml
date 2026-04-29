@@ -1,26 +1,94 @@
 # .github/workflows/ci.yml
-name: CI
+name: Core Validation
 
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: core-validation-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  nix:
+  nix-surface:
+    name: Nix surface
     runs-on: [self-hosted, nixos]
-    permissions:
-      contents: read
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+
       - uses: cachix/install-nix-action@8887e596b4ee1134dae06b98d573bd674693f47c # v30
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
           extra_nix_config: |
             accept-flake-config = true
-      - uses: cachix/cachix-action@ad2ddac53f961de1989924296a1f236fcfbaa4fc # v15
+
+      - if: ${{ secrets.CACHIX_AUTH_TOKEN != '' }}
+        uses: cachix/cachix-action@ad2ddac53f961de1989924296a1f236fcfbaa4fc # v15
         with:
           name: voidnxlabs
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
-      - run: nix flake check
-      - run: nix build
+
+      - name: Flake checks
+        run: nix flake check --show-trace
+
+  python-core:
+    name: Python core gate
+    runs-on: [self-hosted, nixos]
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+
+      - uses: cachix/install-nix-action@8887e596b4ee1134dae06b98d573bd674693f47c # v30
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          extra_nix_config: |
+            accept-flake-config = true
+
+      - if: ${{ secrets.CACHIX_AUTH_TOKEN != '' }}
+        uses: cachix/cachix-action@ad2ddac53f961de1989924296a1f236fcfbaa4fc # v15
+        with:
+          name: voidnxlabs
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
+      - name: Unit and integration tests
+        run: nix develop --command pytest -q
+
+      - name: Bytecode compilation smoke
+        run: nix develop --command python -m compileall src tests
+
+  runtime-contracts:
+    name: Runtime contracts
+    runs-on: [self-hosted, nixos]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+
+      - uses: cachix/install-nix-action@8887e596b4ee1134dae06b98d573bd674693f47c # v30
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          extra_nix_config: |
+            accept-flake-config = true
+
+      - if: ${{ secrets.CACHIX_AUTH_TOKEN != '' }}
+        uses: cachix/cachix-action@ad2ddac53f961de1989924296a1f236fcfbaa4fc # v15
+        with:
+          name: voidnxlabs
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
+      - name: Poetry metadata and lock coherence
+        run: nix develop --command poetry check --lock
+
+      - name: CLI smoke
+        run: nix develop --command spooknix --help
+
+      - name: Server and MCP import smoke
+        run: nix develop --command poetry run python -c "import src.server, src.mcp_tool"
+
+      - name: Compose manifest validation
+        run: docker compose config -q
