@@ -2,6 +2,7 @@
 """CLI do Spooknix — Privacy-first STT Engine."""
 
 import json
+import logging
 import os
 from pathlib import Path
 
@@ -11,8 +12,21 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn, BarColumn, TimeRemainingColumn
 
+from .logging_setup import configure_logging
+
 console = Console(stderr=True)
 out_console = Console()
+
+
+def _apply_verbose(verbose: int) -> None:
+    """Map -v/-vv to INFO/DEBUG, no flag = WARNING (silent)."""
+    if verbose >= 2:
+        level = logging.DEBUG
+    elif verbose == 1:
+        level = logging.INFO
+    else:
+        level = logging.WARNING
+    configure_logging(level=level, force=True)
 
 
 @click.group()
@@ -161,7 +175,9 @@ SERVER_URL = os.getenv("SPOOKNIX_URL", "http://localhost:8000")
               help="Ativar diarização de speakers via pyannote-audio (requer HF_TOKEN)")
 @click.option("--out", default=None, type=click.Path(dir_okay=False, writable=True),
               help="Salvar a transcrição final em um arquivo de texto/markdown")
-def record(language, silence, threshold, clip, max_duration, server, stop_word, diarize, out):
+@click.option("-v", "--verbose", count=True,
+              help="Logs em tempo real. -v = INFO (estado, stop reason), -vv = DEBUG (RMS por chunk).")
+def record(language, silence, threshold, clip, max_duration, server, stop_word, diarize, out, verbose):
     """Grava do microfone e transcreve via servidor HTTP."""
     import os
     import subprocess
@@ -169,6 +185,7 @@ def record(language, silence, threshold, clip, max_duration, server, stop_word, 
     import urllib.error
     from .recorder import record_until_silence, RecordingError
 
+    _apply_verbose(verbose)
     base_url = server or SERVER_URL
 
     # Verificar servidor antes de gravar
@@ -350,9 +367,12 @@ SERVER_WS_URL = os.getenv("SPOOKNIX_WS_URL", "ws://localhost:8000")
               help="Duração máxima da sessão em segundos")
 @click.option("--out", default=None, type=click.Path(dir_okay=False, writable=True),
               help="Salvar a transcrição final em um arquivo de texto/markdown")
-def stream(language, window, clip, stop_word, server, max_duration, out):
+@click.option("-v", "--verbose", count=True,
+              help="Logs em tempo real (-v INFO, -vv DEBUG).")
+def stream(language, window, clip, stop_word, server, max_duration, out, verbose):
     """Stream do microfone com transcrição parcial em tempo real via WebSocket."""
     import asyncio
+    _apply_verbose(verbose)
     asyncio.run(_stream_async(language, window, clip, stop_word, server, max_duration, out))
 
 
@@ -507,9 +527,12 @@ async def _stream_async(
               help="Modelo do LLM a ser utilizado (ex: gpt-4o, llama-3)")
 @click.option("--out", default="outputs/interviews/session.md", type=click.Path(dir_okay=False, writable=True),
               help="Salvar o relatório final em Markdown")
-def interview(language, silence, threshold, server, model, out):
+@click.option("-v", "--verbose", count=True,
+              help="Logs do orquestrador. -v = transições de estado, -vv = RMS por chunk.")
+def interview(language, silence, threshold, server, model, out, verbose):
     """Simulador interativo de entrevistas profissionais com feedback via LLM (Full-Duplex TTS)."""
     import asyncio
+    _apply_verbose(verbose)
     try:
         asyncio.run(_interview_async(language, silence, threshold, server, model, out))
     except KeyboardInterrupt:

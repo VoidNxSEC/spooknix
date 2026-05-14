@@ -6,9 +6,11 @@ Gerencia a máquina de estados, chunking de TTS e playback de áudio.
 """
 
 import asyncio
+import logging
 import queue
 import re
 import threading
+import time
 from dataclasses import dataclass
 from enum import Enum, auto
 
@@ -17,6 +19,15 @@ import sounddevice as sd
 
 from .llm_client import LLMClient, InterviewSession
 from .tts_client import LocalTTSClient
+
+log = logging.getLogger(__name__)
+
+
+def _describe_status(status) -> str:
+    if status is None:
+        return ""
+    s = str(status).strip()
+    return s or repr(status)
 
 
 # ── CAMADAS 1 & 2: Personas e Cenários ─────────────────────────────────────
@@ -227,6 +238,7 @@ class Orchestrator:
 
     def trigger_barge_in(self):
         """Acionado pela thread do microfone quando detecta voz no estado SPEAKING."""
+        log.info("barge_in.trigger pending_tts=%d", len(self.tts_tasks))
         self.state = State.LISTENING
         # 1. Cala o hardware de som
         self.player.stop_instantly()
@@ -243,16 +255,29 @@ class Orchestrator:
         from .recorder import _chunks_to_wav_bytes
 
         wav_bytes = _chunks_to_wav_bytes(chunks, sample_rate)
+        duration_s = sum(c.size for c in chunks) / sample_rate
+        log.info(
+            "stt.request endpoint=%s chunks=%d duration=%.2fs bytes=%d",
+            self.stt_endpoint, len(chunks), duration_s, len(wav_bytes),
+        )
         form = aiohttp.FormData()
         form.add_field("file", wav_bytes, filename="turn.wav")
         form.add_field("language", self.language)
+        t0 = time.monotonic()
         try:
             async with aiohttp.ClientSession() as http_session:
                 async with http_session.post(self.stt_endpoint, data=form, timeout=30) as resp:
                     if resp.status == 200:
                         data = await resp.json()
-                        return data.get("text", "").strip()
+                        text = data.get("text", "").strip()
+                        log.info(
+                            "stt.response latency=%.2fs chars=%d",
+                            time.monotonic() - t0, len(text),
+                        )
+                        return text
+                    log.warning("stt.bad_status status=%d", resp.status)
         except Exception as e:
+            log.error("stt.error %s", e)
             print(f"\n[STT Error] {e}")
         return ""
 
@@ -301,9 +326,21 @@ class Orchestrator:
         has_spoken = False
         audio_buffer: list[np.ndarray] = []
         processing_task: asyncio.Task | None = None
+        overflow_count = [0]
+
+        log.info(
+            "session.start silence_s=%.2f threshold=%.4f sr=%d blocksize=%d",
+            silence_s, threshold, SAMPLE_RATE, BLOCKSIZE,
+        )
 
         def audio_callback(indata: np.ndarray, frames: int, time_info, status):
             """Callback síncrono da PipeWire. Ouve o tempo todo."""
+            if status:
+                overflow_count[0] += 1
+                log.warning(
+                    "audio.status flags=%s overflow_count=%d",
+                    _describe_status(status), overflow_count[0],
+                )
             chunk = indata[:, 0].copy().astype(np.float32)
             rms = float(np.sqrt(np.mean(chunk ** 2)))
             is_speech = rms >= threshold
@@ -339,6 +376,11 @@ class Orchestrator:
                             silent_count += 1
 
                             if silent_count > silent_chunks_needed:
+                                turn_duration = sum(c.size for c in audio_buffer) / SAMPLE_RATE
+                                log.info(
+                                    "turn.complete chunks=%d duration=%.2fs → PROCESSING",
+                                    len(audio_buffer), turn_duration,
+                                )
                                 self.state = State.PROCESSING
                                 # Cria task assíncrona para não bloquear o loop de captação
                                 processing_task = asyncio.create_task(
@@ -352,6 +394,7 @@ class Orchestrator:
                     elif self.state == State.SPEAKING:
                         # Barge-in: Usuário começou a falar enquanto a IA falava/tocava
                         if is_speech:
+                            log.info("barge_in.detected rms_chunk_size=%d", chunk.size)
                             self.trigger_barge_in() # Corta o TTS e a fila de playback
 
                             if processing_task and not processing_task.done():
@@ -365,6 +408,7 @@ class Orchestrator:
                             self.state = State.LISTENING # Volta imediatamente pro loop de Listening
 
         except (KeyboardInterrupt, asyncio.CancelledError):
+            log.info("session.end reason=user_interrupt overflow_count=%d", overflow_count[0])
             console.print("\n\n[bold yellow]Sessão encerrada pelo usuário.[/]")
             if processing_task and not processing_task.done():
                 processing_task.cancel()

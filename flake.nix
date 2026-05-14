@@ -103,6 +103,11 @@
           # Utils
           just
 
+          # eBPF — debug de áudio e syscalls em tempo real
+          bpftrace
+          bpfilter
+          bpftools
+
           # Secrets
           sops
           age

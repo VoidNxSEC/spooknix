@@ -1,0 +1,122 @@
+#!/usr/bin/env bpftrace
+/*
+ * ebpf-audio-debug.bt — Spooknix audio pipeline tracer
+ *
+ * O que monitora:
+ *   1. Latência dos write() no socket do PipeWire (underruns visíveis como spikes)
+ *   2. Latência dos read() do microfone (callback scheduling do sounddevice)
+ *   3. Contagem de erros EPIPE/EAGAIN (buffer overflow / underrun)
+ *
+ * Uso (dentro do nix develop, como root ou com CAP_BPF):
+ *   sudo bpftrace scripts/ebpf-audio-debug.bt
+ *
+ * Opcional — filtrar só o processo spooknix:
+ *   sudo bpftrace scripts/ebpf-audio-debug.bt -e 'BEGIN { @target_comm = "python"; }'
+ */
+
+BEGIN
+{
+    printf("=== Spooknix Audio eBPF Tracer ===\n");
+    printf("Ctrl+C para encerrar e ver histogramas.\n\n");
+    @pipewire_sock_path = "/run/user/1000/pipewire-0";
+}
+
+/* ── 1. Latência de write() no socket PipeWire ─────────────────────────── */
+
+tracepoint:syscalls:sys_enter_write
+/ comm == "python" || comm == "spooknix" /
+{
+    @write_start[tid] = nsecs;
+}
+
+tracepoint:syscalls:sys_exit_write
+/ @write_start[tid] /
+{
+    $lat_us = (nsecs - @write_start[tid]) / 1000;
+    @write_lat_us = hist($lat_us);
+    if ($lat_us > 5000) {
+        time("%H:%M:%S ");
+        printf("SPIKE write() %d µs  tid=%d comm=%s\n", $lat_us, tid, comm);
+    }
+    delete(@write_start[tid]);
+}
+
+/* ── 2. Latência de read() — leitura do microfone (InputStream) ─────────── */
+
+tracepoint:syscalls:sys_enter_read
+/ comm == "python" || comm == "spooknix" /
+{
+    @read_start[tid] = nsecs;
+}
+
+tracepoint:syscalls:sys_exit_read
+/ @read_start[tid] /
+{
+    $lat_us = (nsecs - @read_start[tid]) / 1000;
+    @read_lat_us = hist($lat_us);
+    delete(@read_start[tid]);
+}
+
+/* ── 3. Erros de syscall — EPIPE (32) = underrun, EAGAIN (11) = overflow ── */
+
+tracepoint:syscalls:sys_exit_write
+/ (comm == "python" || comm == "spooknix") && args->ret < 0 /
+{
+    @write_errors[- args->ret] = count();
+}
+
+tracepoint:syscalls:sys_exit_read
+/ (comm == "python" || comm == "spooknix") && args->ret < 0 /
+{
+    @read_errors[- args->ret] = count();
+}
+
+/* ── 4. Wakeup scheduling da thread de callback de áudio ──────────────── */
+
+tracepoint:sched:sched_wakeup
+/ comm == "python" /
+{
+    @wakeups_per_sec = count();
+}
+
+/* ── 5. Soft IRQ de áudio (xrun detection no kernel) ─────────────────── */
+
+tracepoint:irq:softirq_entry
+/ args->vec == 3 /* NET_RX — PipeWire usa AF_UNIX */ /
+{
+    @softirq_net = count();
+}
+
+interval:s:5
+{
+    printf("\n[--- 5s snapshot ---]\n");
+    printf("Wakeups python/s: "); print(@wakeups_per_sec); clear(@wakeups_per_sec);
+    printf("write errnos: "); print(@write_errors);
+    printf("read  errnos: "); print(@read_errors);
+}
+
+END
+{
+    printf("\n\n=== Resultados Finais ===\n");
+
+    printf("\nLatência write() µs (PipeWire/sounddevice output):\n");
+    print(@write_lat_us);
+
+    printf("\nLatência read() µs (microfone input):\n");
+    print(@read_lat_us);
+
+    printf("\nErros write() por errno:\n");
+    print(@write_errors);
+
+    printf("\nErros read() por errno:\n");
+    print(@read_errors);
+
+    clear(@write_start);
+    clear(@read_start);
+    clear(@write_lat_us);
+    clear(@read_lat_us);
+    clear(@write_errors);
+    clear(@read_errors);
+    clear(@wakeups_per_sec);
+    clear(@softirq_net);
+}
