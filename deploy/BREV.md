@@ -1,33 +1,85 @@
 # Spooknix on NVIDIA Brev
 
-This is the fastest path to validate the full conversational suite on a Brev GPU box without accidentally falling back to OpenAI.
+The fastest path to validate the full conversational + summarize suite on a
+Brev GPU box without accidentally falling back to OpenAI.
+
+## TL;DR (60-second path)
+
+On a fresh Brev box with this repo cloned:
+
+```bash
+# 1. Edit .env.brev with your LLM_IMAGE and TTS_IMAGE
+cp .env.brev.example .env.brev
+$EDITOR .env.brev
+
+# 2. One-shot launch (provisioning + workers up + smoke)
+spooknix brev          # or: bash scripts/brev-launch.sh
+
+# 3. Use it
+spooknix interview --persona sarah --scenario behavioral --difficulty hard
+spooknix summarize lecture.mp4 --template lecture
+```
+
+That's it. The launcher handles `.env` creation, `docker compose up`, waits
+for the STT model to load, and runs `spooknix doctor --brev` + an
+end-to-end TTS synthesize check.
+
+---
 
 ## Recommended GPU budget
 
-- `16 GB VRAM`: practical minimum for STT + local LLM + local TTS experiments
-- `24 GB VRAM`: much safer for stable end-to-end testing
-- `6 GB VRAM`: enough for partial validation only, not the whole full-duplex stack with comfort
+- `16 GB VRAM`: practical minimum for STT + local LLM + local TTS together
+- `24 GB VRAM`: comfortable for stable end-to-end testing
+- `6 GB VRAM`: enough for STT-only validation, not the full duplex stack
 
 ## Worker topology
 
 Run the suite as 3 separate workers:
 
-1. `STT` on `:8000`
-2. `LLM` on `:8080` exposing an OpenAI-compatible `/v1`
-3. `TTS` on `:8001`
+1. `STT` on `:8000` — ships in this repo (`spooknix` container)
+2. `LLM` on `:8080` exposing OpenAI-compatible `/v1` — your image, your choice
+3. `TTS` on `:8001` — your image, your choice (F5-TTS / XTTS / Piper / etc.)
 
-This repo only ships the STT worker. LLM and TTS are expected to be provided by your Brev runtime or companion containers.
+This repo only ships the STT worker. LLM and TTS are expected to be provided
+by your Brev runtime or companion containers — `docker-compose.workers.yml`
+plus `.env.brev` lets you wire them in without touching code.
 
-## Environment bootstrap
+## Provisioning script
+
+Brev runs `.brev/setup.sh` automatically when the workspace is created:
+
+- installs `ffmpeg`, `libsndfile1`, `libopenblas-dev`, `jq`, `curl`
+- installs the `docker compose` plugin if missing
+- verifies the NVIDIA Container Toolkit can see the GPU
+- optionally installs Nix (set `SPOOKNIX_BREV_INSTALL_NIX=1`)
+- hands off to `scripts/brev-launch.sh`
+
+## Compose layering (Nix vs Brev)
+
+The base `docker-compose.yml` is tuned for NixOS hosts: it uses NVIDIA CDI
+(`driver: cdi`) and bind-mounts `/var/lib/ml-models` to share model caches.
+Neither exists on a vanilla Brev/Ubuntu box, so the deploy uses three layered
+files:
 
 ```bash
-cp .env.example .env
-cp .env.brev.example .env.brev
-set -a
-source .env
-source .env.brev
-set +a
+docker compose \
+  -f docker-compose.yml \         # base (NixOS-tuned)
+  -f docker-compose.brev.yml \    # override — strips CDI, swaps to runtime: nvidia
+  -f docker-compose.workers.yml \ # companion LLM + TTS containers
+  up -d
 ```
+
+`scripts/brev-launch.sh` already wires all three. On a NixOS host running
+locally, drop the `-f docker-compose.brev.yml` line and you keep CDI.
+
+The companion file is generic — pick a profile in `.env.brev.example` and copy
+to `.env.brev`. The profiles (low / mid / high VRAM) provide concrete
+`LLM_IMAGE`, `LLM_START_COMMAND`, `TTS_IMAGE`, `TTS_START_COMMAND` blocks
+instead of placeholders.
+
+## Environment
+
+`.env` covers application config; `.env.brev` covers companion images.
 
 Minimum variables for local-first interview mode:
 
@@ -41,67 +93,43 @@ export TTS_LANGUAGE="en"
 
 Do not set `OPENAI_API_KEY` unless you explicitly want to use OpenAI.
 
-## Companion compose for LLM and TTS
+## Diagnostics
 
-This repo ships the STT worker directly and a companion compose file for the other 2 workers:
+`spooknix doctor --brev` prints a single table covering:
 
-```bash
-docker compose -f docker-compose.yml -f docker-compose.workers.yml up -d
-```
-
-The companion file is intentionally generic. You must fill these values in `.env.brev`:
-
-- `LLM_IMAGE`
-- `LLM_START_COMMAND`
-- `TTS_IMAGE`
-- `TTS_START_COMMAND`
-
-That keeps the repo portable across different Brev images instead of hardcoding one backend you may not use.
-
-## STT worker
-
-```bash
-docker compose up -d spooknix
-curl -fsS http://localhost:8000/health
-```
-
-## Preflight
-
-```bash
-bash scripts/brev-smoke.sh
-```
-
-What it checks:
-
-- `LLM_BASE_URL`, `LLM_MODEL`, and TTS base URL presence
+- CUDA + VRAM
 - STT `/health`
-- LLM `/v1/models`
-- best-effort TTS `/health`
+- Audio devices (`sd.query_devices()`)
+- ffmpeg presence
+- LLM `/v1/models` with latency
+- TTS `/health` (with `TTS_HEALTH_URL` override)
+
+`bash scripts/brev-smoke.sh` runs doctor + an actual TTS synthesize POST,
+because TTS images often answer `/health` while still failing on real
+workloads. The script verifies the response is a valid RIFF WAV.
 
 ## Interview loop
 
 ```bash
-nix develop --command spooknix interview --language en --silence 2.5 --threshold 0.03
+spooknix interview --language en --persona sarah --scenario system_design --difficulty hard
 ```
 
-If you are using the companion compose file, the full startup flow becomes:
+Other CLI tools that work the same on Brev as locally:
 
-```bash
-cp .env.example .env
-cp .env.brev.example .env.brev
-set -a
-source .env
-source .env.brev
-set +a
+- `spooknix summarize` — videos, lectures, meetings → markdown with `[mm:ss]` anchors
+- `spooknix file` — single-file transcription with `large-v3-turbo`
+- `spooknix record --vad-neural --meter` — direct STT from a forwarded mic
+- `spooknix interview --list / --show <id> / --diff <a> <b>` — session history
 
-docker compose -f docker-compose.yml -f docker-compose.workers.yml up -d
-bash scripts/brev-smoke.sh
-nix develop --command spooknix interview --language en --silence 2.5 --threshold 0.03
-```
+## Tuning tips
 
-## First-run tuning tips
-
-- If the candidate gets cut off too early, increase `--silence` to `3.0` or `3.5`.
-- If the mic is noisy, start with `--threshold 0.03` to `0.05`.
-- Use headphones on Brev audio passthrough setups to reduce echo and false barge-in.
-- Validate each worker independently before blaming the turn-taking loop.
+- If the candidate gets cut off too early, increase `--silence` to `3.0`–`3.5`,
+  or pass `--vad-neural` for Silero VAD (more robust than RMS).
+- If the mic is noisy, start with `--threshold 0.03` to `0.05` or use Silero.
+- Use headphones on Brev audio passthrough setups to reduce echo and false
+  barge-in. PipeWire's AEC handles speaker-into-mic locally; over Brev's
+  audio forwarding you don't get that, so headphones are a hard requirement.
+- Validate each worker independently with `spooknix doctor --brev` before
+  blaming the turn-taking loop.
+- For long summaries on small LLMs, lower `--max-tokens` to `2000` so each
+  chunk fits comfortably in the context window.

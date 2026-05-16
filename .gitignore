@@ -45,3 +45,5 @@ secrets/age.key
 # Nix
 result
 result-*
+git
+git.pub

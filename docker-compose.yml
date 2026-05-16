@@ -27,13 +27,23 @@ services:
     volumes:
       - ./outputs:/app/outputs
       - ./src:/app/src:ro                          # hot-reload do código
+      - ./outputs/interviews:/app/outputs/interviews
+      - ./outputs/summaries:/app/outputs/summaries  
       - hf_cache:/root/.cache/huggingface          # modelos persistem entre restarts
       - /var/lib/ml-models/huggingface/hub:/root/.cache/huggingface/hub  # reaproveita modelos do sistema
       - cuda_cache:/root/.cuda_cache               # cache de kernels CUDA compilados
 
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)\" || exit 1"]
+      interval: 30s
+      timeout: 10s
+      start_period: 120s
+      retries: 3
+
+
     environment:
       - CUDA_VISIBLE_DEVICES=0
-      - MODEL_SIZE=large-v3
+      - MODEL_SIZE=large-v3                        # use large-v3-turbo p/ ~8× speedup
       - DEVICE=cuda
       - COMPUTE_TYPE=int8_float16
       - ENABLE_DIARIZATION=false

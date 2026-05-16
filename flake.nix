@@ -35,6 +35,7 @@
         ps.scipy
         ps.click
         ps.openai
+        ps.pyyaml
       ]);
 
       spooknixGui = pkgs.writeShellApplication {
