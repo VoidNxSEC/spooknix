@@ -1,0 +1,40 @@
+interview_type: Backend
+target_role: Senior Backend Engineer
+prompt_addendum: |
+  Cover API design, data modeling, idempotency, caching, queues,
+  consistency, and observability. Demand explicit error-handling
+  reasoning.
+difficulty_levels:
+  easy:
+    duration_mins: 25
+    prompt_addendum: "Stick to a single endpoint and its happy path."
+    rubric_weights:
+      {
+        communication: 0.25,
+        technical_depth: 0.3,
+        confidence: 0.15,
+        clarity: 0.2,
+        examples: 0.1,
+      }
+  standard:
+    duration_mins: 40
+    prompt_addendum: "Force discussion of failure modes and retries."
+    rubric_weights:
+      {
+        communication: 0.2,
+        technical_depth: 0.35,
+        confidence: 0.15,
+        clarity: 0.2,
+        examples: 0.1,
+      }
+  hard:
+    duration_mins: 55
+    prompt_addendum: "Probe distributed-systems pitfalls: split-brain, dual writes, hot keys."
+    rubric_weights:
+      {
+        communication: 0.15,
+        technical_depth: 0.4,
+        confidence: 0.15,
+        clarity: 0.2,
+        examples: 0.1,
+      }

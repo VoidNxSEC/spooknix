@@ -1,0 +1,39 @@
+interview_type: ML Engineering
+target_role: Senior ML Engineer
+prompt_addendum: |
+  Cover problem framing, dataset curation, baseline + ablation,
+  evaluation metrics, training infra, and deployment guardrails.
+difficulty_levels:
+  easy:
+    duration_mins: 25
+    prompt_addendum: "Anchor on a small classification problem with abundant data."
+    rubric_weights:
+      {
+        communication: 0.2,
+        technical_depth: 0.4,
+        confidence: 0.1,
+        clarity: 0.2,
+        examples: 0.1,
+      }
+  standard:
+    duration_mins: 40
+    prompt_addendum: "Insist on baselines, data leakage checks, and offline/online gap."
+    rubric_weights:
+      {
+        communication: 0.15,
+        technical_depth: 0.45,
+        confidence: 0.1,
+        clarity: 0.2,
+        examples: 0.1,
+      }
+  hard:
+    duration_mins: 55
+    prompt_addendum: "Probe distributed training, eval harnesses, and red-team failure modes."
+    rubric_weights:
+      {
+        communication: 0.1,
+        technical_depth: 0.5,
+        confidence: 0.1,
+        clarity: 0.2,
+        examples: 0.1,
+      }

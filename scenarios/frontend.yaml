@@ -1,0 +1,39 @@
+interview_type: Frontend
+target_role: Senior Frontend Engineer
+prompt_addendum: |
+  Cover component design, state management, performance budgeting,
+  accessibility, and rendering pipelines (React/Vue/Svelte agnostic).
+difficulty_levels:
+  easy:
+    duration_mins: 20
+    prompt_addendum: "Ask about a single small feature with clear acceptance criteria."
+    rubric_weights:
+      {
+        communication: 0.25,
+        technical_depth: 0.3,
+        confidence: 0.15,
+        clarity: 0.2,
+        examples: 0.1,
+      }
+  standard:
+    duration_mins: 35
+    prompt_addendum: "Push for performance numbers (FCP, LCP, hydration cost)."
+    rubric_weights:
+      {
+        communication: 0.2,
+        technical_depth: 0.35,
+        confidence: 0.15,
+        clarity: 0.2,
+        examples: 0.1,
+      }
+  hard:
+    duration_mins: 50
+    prompt_addendum: "Demand explicit reasoning about RSC, streaming SSR, or web workers when appropriate."
+    rubric_weights:
+      {
+        communication: 0.15,
+        technical_depth: 0.4,
+        confidence: 0.15,
+        clarity: 0.2,
+        examples: 0.1,
+      }

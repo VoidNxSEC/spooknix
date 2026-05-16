@@ -1,0 +1,29 @@
+# docker-compose.brev.yml — override for non-NixOS hosts (Brev VMs, vanilla Ubuntu/Debian).
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.brev.yml -f docker-compose.workers.yml up -d
+#
+# Why this exists:
+#   The base docker-compose.yml is NixOS-tuned: it uses NVIDIA's Container Device
+#   Interface (driver: cdi) and bind-mounts /var/lib/ml-models — neither exists on
+#   a fresh Brev box. This override swaps to the classic nvidia-container-toolkit
+#   runtime and drops the NixOS-specific mount.
+services:
+  spooknix:
+    # Neutralize CDI: standard nvidia-container-toolkit instead.
+    runtime: nvidia
+    deploy: !reset null
+
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+
+    # Reset the inherited volume list, then re-declare only what's portable.
+    # The /var/lib/ml-models/huggingface/hub bind mount is intentionally absent.
+    volumes: !override
+      - ./outputs:/app/outputs
+      - ./src:/app/src:ro
+      - ./outputs/interviews:/app/outputs/interviews
+      - ./outputs/summaries:/app/outputs/summaries
+      - hf_cache:/root/.cache/huggingface
+      - cuda_cache:/root/.cuda_cache

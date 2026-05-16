@@ -1,0 +1,39 @@
+interview_type: Behavioral
+target_role: Senior Software Engineer
+prompt_addendum: |
+  Focus on past experiences. Ask STAR-shaped questions covering ownership,
+  conflict, ambiguity, and leadership without authority.
+difficulty_levels:
+  easy:
+    duration_mins: 15
+    prompt_addendum: "Keep questions friendly and self-contained."
+    rubric_weights:
+      {
+        communication: 0.3,
+        technical_depth: 0.1,
+        confidence: 0.2,
+        clarity: 0.2,
+        examples: 0.2,
+      }
+  standard:
+    duration_mins: 25
+    prompt_addendum: "Push for concrete metrics and timelines in answers."
+    rubric_weights:
+      {
+        communication: 0.25,
+        technical_depth: 0.15,
+        confidence: 0.2,
+        clarity: 0.2,
+        examples: 0.2,
+      }
+  hard:
+    duration_mins: 40
+    prompt_addendum: "Probe for self-awareness in failure stories. Follow up at least twice on each answer."
+    rubric_weights:
+      {
+        communication: 0.2,
+        technical_depth: 0.2,
+        confidence: 0.2,
+        clarity: 0.2,
+        examples: 0.2,
+      }

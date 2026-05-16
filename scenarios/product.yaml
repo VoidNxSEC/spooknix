@@ -1,0 +1,39 @@
+interview_type: Product Sense
+target_role: Senior Product Engineer
+prompt_addendum: |
+  Cover problem framing, user empathy, prioritization frameworks,
+  metrics design, and tradeoff articulation.
+difficulty_levels:
+  easy:
+    duration_mins: 20
+    prompt_addendum: "Use a well-known consumer product as the anchor."
+    rubric_weights:
+      {
+        communication: 0.3,
+        technical_depth: 0.15,
+        confidence: 0.15,
+        clarity: 0.2,
+        examples: 0.2,
+      }
+  standard:
+    duration_mins: 35
+    prompt_addendum: "Demand a clear North Star metric and counter-metrics."
+    rubric_weights:
+      {
+        communication: 0.25,
+        technical_depth: 0.2,
+        confidence: 0.15,
+        clarity: 0.2,
+        examples: 0.2,
+      }
+  hard:
+    duration_mins: 50
+    prompt_addendum: "Probe ambiguous-domain products and force prioritization without data."
+    rubric_weights:
+      {
+        communication: 0.2,
+        technical_depth: 0.25,
+        confidence: 0.15,
+        clarity: 0.2,
+        examples: 0.2,
+      }

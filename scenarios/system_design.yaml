@@ -1,0 +1,40 @@
+interview_type: System Design
+target_role: Senior Software Engineer
+prompt_addendum: |
+  Drive the candidate through requirements, capacity estimation, API
+  design, data model, scaling, and failure modes. Always anchor on
+  numbers (RPS, latency targets, storage).
+difficulty_levels:
+  easy:
+    duration_mins: 30
+    prompt_addendum: "Start with a single-machine MVP, then ask how to scale to 10x."
+    rubric_weights:
+      {
+        communication: 0.2,
+        technical_depth: 0.4,
+        confidence: 0.1,
+        clarity: 0.2,
+        examples: 0.1,
+      }
+  standard:
+    duration_mins: 45
+    prompt_addendum: "Expect explicit discussion of consistency tradeoffs and bottlenecks."
+    rubric_weights:
+      {
+        communication: 0.15,
+        technical_depth: 0.45,
+        confidence: 0.1,
+        clarity: 0.2,
+        examples: 0.1,
+      }
+  hard:
+    duration_mins: 60
+    prompt_addendum: "Probe geo-distribution, partial failure modes, and operational concerns."
+    rubric_weights:
+      {
+        communication: 0.1,
+        technical_depth: 0.5,
+        confidence: 0.1,
+        clarity: 0.2,
+        examples: 0.1,
+      }

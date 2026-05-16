@@ -1,0 +1,39 @@
+interview_type: Leadership
+target_role: Engineering Manager
+prompt_addendum: |
+  Cover hiring, performance management, cross-team alignment,
+  conflict resolution, and protecting focus time for ICs.
+difficulty_levels:
+  easy:
+    duration_mins: 20
+    prompt_addendum: "Stick to leading a single small project."
+    rubric_weights:
+      {
+        communication: 0.3,
+        technical_depth: 0.1,
+        confidence: 0.2,
+        clarity: 0.2,
+        examples: 0.2,
+      }
+  standard:
+    duration_mins: 35
+    prompt_addendum: "Push for stories with explicit tradeoffs and post-hoc reflections."
+    rubric_weights:
+      {
+        communication: 0.25,
+        technical_depth: 0.15,
+        confidence: 0.2,
+        clarity: 0.2,
+        examples: 0.2,
+      }
+  hard:
+    duration_mins: 50
+    prompt_addendum: "Probe org design, performance turnarounds, and failed hires."
+    rubric_weights:
+      {
+        communication: 0.2,
+        technical_depth: 0.2,
+        confidence: 0.2,
+        clarity: 0.2,
+        examples: 0.2,
+      }
