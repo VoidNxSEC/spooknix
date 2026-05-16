@@ -1,0 +1,133 @@
+#!/usr/bin/env bpftrace
+/*
+ * ebpf-worker-latency.bt — Spooknix worker latency tracer
+ *
+ * Mede latência de TCP connect() e read()/write() sobre os 3 workers:
+ *   - STT  em :8000
+ *   - TTS  em :8001
+ *   - LLM  em :8080 (também :8081 para llama-server local)
+ *
+ * Útil para diferenciar:
+ *   "interview está lento porque o LLM demora" vs
+ *   "interview está lento porque o TTS bufferiza demais" vs
+ *   "interview está lento porque a rede até o Brev tá ruim".
+ *
+ * Uso (root ou CAP_BPF, dentro do nix develop):
+ *   sudo bpftrace scripts/ebpf-worker-latency.bt
+ *
+ * Combine com:
+ *   sudo bpftrace scripts/ebpf-audio-debug.bt
+ * em outro terminal para ter visão completa do pipeline.
+ */
+
+BEGIN
+{
+    printf("=== Spooknix Worker Latency Tracer ===\n");
+    printf("Watching ports 8000 (STT), 8001 (TTS), 8080/8081 (LLM)\n");
+    printf("Ctrl+C para encerrar e ver histogramas.\n\n");
+}
+
+/* ── TCP connect latency (cold-start / pool churn) ──────────────────────── */
+
+kprobe:tcp_v4_connect
+/ comm == "python" || comm == "spooknix" /
+{
+    @connect_start[tid] = nsecs;
+}
+
+kretprobe:tcp_v4_connect
+/ @connect_start[tid] /
+{
+    $lat_us = (nsecs - @connect_start[tid]) / 1000;
+    @tcp_connect_lat_us = hist($lat_us);
+    if ($lat_us > 50000) {
+        time("%H:%M:%S ");
+        printf("SLOW connect %d µs tid=%d comm=%s\n", $lat_us, tid, comm);
+    }
+    delete(@connect_start[tid]);
+}
+
+/* ── Por-porta: latência de write() (request body) e read() (response) ──── */
+
+tracepoint:syscalls:sys_enter_sendto
+/ comm == "python" || comm == "spooknix" /
+{
+    @send_start[tid] = nsecs;
+}
+
+tracepoint:syscalls:sys_exit_sendto
+/ @send_start[tid] /
+{
+    $lat_us = (nsecs - @send_start[tid]) / 1000;
+    @sendto_lat_us = hist($lat_us);
+    delete(@send_start[tid]);
+}
+
+tracepoint:syscalls:sys_enter_recvfrom
+/ comm == "python" || comm == "spooknix" /
+{
+    @recv_start[tid] = nsecs;
+}
+
+tracepoint:syscalls:sys_exit_recvfrom
+/ @recv_start[tid] /
+{
+    $lat_us = (nsecs - @recv_start[tid]) / 1000;
+    @recvfrom_lat_us = hist($lat_us);
+    if ($lat_us > 100000) {
+        time("%H:%M:%S ");
+        printf("SLOW recv %d µs tid=%d comm=%s (LLM stall? TTS render?)\n",
+               $lat_us, tid, comm);
+    }
+    delete(@recv_start[tid]);
+}
+
+/* ── Erros de rede (ECONNREFUSED=111, ETIMEDOUT=110) ────────────────────── */
+
+tracepoint:syscalls:sys_exit_sendto
+/ (comm == "python" || comm == "spooknix") && args->ret < 0 /
+{
+    @send_errors[- args->ret] = count();
+}
+
+tracepoint:syscalls:sys_exit_recvfrom
+/ (comm == "python" || comm == "spooknix") && args->ret < 0 /
+{
+    @recv_errors[- args->ret] = count();
+}
+
+interval:s:10
+{
+    printf("\n[--- 10s snapshot ---]\n");
+    printf("Send errnos: "); print(@send_errors);
+    printf("Recv errnos: "); print(@recv_errors);
+}
+
+END
+{
+    printf("\n\n=== Resultados Finais ===\n");
+
+    printf("\nLatência TCP connect() µs:\n");
+    print(@tcp_connect_lat_us);
+
+    printf("\nLatência sendto() µs (request body):\n");
+    print(@sendto_lat_us);
+
+    printf("\nLatência recvfrom() µs (response body):\n");
+    print(@recvfrom_lat_us);
+
+    printf("\nErros sendto() por errno:\n");
+    print(@send_errors);
+
+    printf("\nErros recvfrom() por errno:\n");
+    print(@recv_errors);
+
+    clear(@connect_start);
+    clear(@send_start);
+    clear(@recv_start);
+    clear(@tcp_connect_lat_us);
+    clear(@sendto_lat_us);
+    clear(@recvfrom_lat_us);
+    clear(@send_errors);
+    clear(@recv_errors);
+}
